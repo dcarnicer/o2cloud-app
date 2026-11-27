@@ -4,25 +4,17 @@ built with Tauri 2 and backed by
 
 ## Changes
 
-- **o2cloud CLI 1.3.1** bundled; the app requires 1.2+ within 1.x and only
-  offers CLI updates within that major version.
-- **Overwrite fix:** CLI 1.2.2 makes replacing a file uploaded seconds earlier
-  wait for O2 to validate it (`MED-1017`) instead of leaving both copies.
-- **Slow overwrites:** the transfer row says when O2 is checking a recent copy,
-  and the upload watchdog no longer mistakes that wait for a stalled transfer.
-- **Recuerdos:** Momentos, Lugares (list or OpenStreetMap map) and Personas.
-- **Pase:** a slideshow of a moment or place, with optional CC0 piano music.
-- **Biblioteca:** Música with a streaming player, and Documentos.
-- **Upload conflicts:** when O2 has the same name with another size, choose
-  overwrite (the old copy goes to O2's trash) or skip instead of silently
-  creating `name (1)`.
-- **Upload progress** and SHA-256 come from the CLI's `--json-lines` events;
-  the old per-platform process/file polling is gone.
-- **Accessibility:** dialogs, focus, live regions, contrast and keyboard
-  behavior checked with axe-core (0 violations).
-- Security: includes the CLI 0.15.4 fix that kept session keys/signed URLs out
-  of failed-request errors.
-- Faster first full listing: 12.1 s vs 24.6 s on a 106k-file account.
+- **o2cloud CLI 1.3.1** bundled on macOS, Windows and Linux; the app requires
+  1.2+ within 1.x and only offers CLI updates within that major version.
+- **Overwriting recent uploads:** replacing a file uploaded seconds earlier now
+  waits for O2 to validate it (`MED-1017`) instead of failing and leaving both
+  copies. The transfer row says what it is waiting for, and the upload watchdog
+  no longer mistakes that wait for a stalled transfer.
+- **Linux:** the bundled CLI is still built from source on Ubuntu 22.04, so the
+  installers keep working there; the official Linux asset needs GLIBC 2.39.
+- Includes everything from 0.2.0: Recuerdos (Momentos, Lugares, Personas),
+  Pase, Biblioteca (Música and Documentos), upload conflicts, `--json-lines`
+  progress and SHA-256, and the accessibility pass.
 
 ## Downloads
 

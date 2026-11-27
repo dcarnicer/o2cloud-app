@@ -1,6 +1,6 @@
 [package]
 name = "o2cloud-app"
-version = "0.2.0"
+version = "0.2.1"
 description = "O2 Cloud desktop client"
 authors = ["dabi"]
 edition = "2024"
