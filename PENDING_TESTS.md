@@ -481,10 +481,17 @@ los tres como `source: "file"`. En la repetición,
 - [x] El job `updater-json` (probado en local con firmas reales) escribe las
       8 claves de `latest.json`, rechaza una firma hecha con otra clave y
       falla si falta la de algún instalador.
-- [ ] Secrets `TAURI_SIGNING_PRIVATE_KEY` y `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+- [x] Secrets `TAURI_SIGNING_PRIVATE_KEY` y `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
       en el repo (sin ellos `create-release` falla).
-- [ ] Release 0.2.5: assets `.sig` y `latest.json` con la versión y URLs de
-      la release. Instalarla a mano (las anteriores no tienen updater).
+- [x] Release **v0.2.5** publicada el 27 nov 2026: todos los jobs en verde
+      (incluido `updater-json`); 12 assets en `SHA256SUMS.txt`, todos OK; un
+      `.sig` por instalador y `latest.json` con la 0.2.5 y 8 entradas. Las 5
+      firmas verifican con la clave pública de la app (`minisign-verify`, el
+      mismo crate del updater) y una copia alterada no. El `.dmg` lleva la
+      app 0.2.5 universal y el CLI 1.4.1 en las dos arquitecturas. La URL
+      pública `releases/latest/download/latest.json` devuelve la 0.2.5.
+- [x] Instalada a mano en `/Applications` (una sola copia); arranca con la
+      CLI 1.4.1 y lista la cuenta.
 - [ ] Con la 0.2.5 instalada y la 0.2.6 publicada: aviso al arrancar,
       «Actualizar a 0.2.6 y reiniciar» descarga, instala y reinicia en la
       0.2.6, sin una segunda copia en `/Applications`.
