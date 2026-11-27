@@ -400,10 +400,21 @@ function formatAgo(timestamp: number | null): string {
   return `hace ${Math.round(seconds / 86400)} días`;
 }
 
+interface ToastAction {
+  label: string;
+  run: () => void;
+}
+
+/**
+ * Show a notification. With `action` it has that button and one to close
+ * it. `timeout` 0 keeps it until it's closed: one with a button mustn't
+ * vanish before it can be reached.
+ */
 function toast(
   message: string,
   type: "info" | "success" | "error" = "info",
   timeout = 5000,
+  action?: ToastAction,
 ): () => void {
   const container = $("#toast-container");
   const el = document.createElement("div");
@@ -411,8 +422,6 @@ function toast(
   // Errors interrupt a screen reader; the rest wait their turn (the
   // container is a polite live region).
   if (type === "error") el.setAttribute("role", "alert");
-  el.textContent = message;
-  container.appendChild(el);
   let leaving = false;
   const dismiss = () => {
     if (leaving) return;
@@ -420,7 +429,33 @@ function toast(
     el.classList.add("leaving");
     window.setTimeout(() => el.remove(), 250);
   };
-  window.setTimeout(dismiss, timeout);
+  if (action) {
+    el.classList.add("actionable");
+    const body = document.createElement("div");
+    body.className = "toast-body";
+    const text = document.createElement("div");
+    text.textContent = message;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "secondary-btn";
+    button.textContent = action.label;
+    button.addEventListener("click", () => {
+      dismiss();
+      action.run();
+    });
+    body.append(text, button);
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "icon-btn toast-close";
+    close.setAttribute("aria-label", "Cerrar aviso");
+    close.textContent = "✕";
+    close.addEventListener("click", dismiss);
+    el.append(body, close);
+  } else {
+    el.textContent = message;
+  }
+  container.appendChild(el);
+  if (timeout > 0) window.setTimeout(dismiss, timeout);
   return dismiss;
 }
 
@@ -864,9 +899,11 @@ function svgIcon(name: keyof typeof ICON_PATHS): SVGSVGElement {
   return svg;
 }
 
+const VIDEO_NAME = /\.(mov|mp4|m4v|3gp|3g2|avi|mkv|webm|mts|m2ts|mpe?g|wmv|flv)$/i;
+
 const FILE_ICONS: [RegExp, string][] = [
   [/\.(jpe?g|png|heic|heif|gif|webp|tiff?|bmp|dng|raw|cr[23]|nef|arw|avif)$/i, "🖼️"],
-  [/\.(mov|mp4|m4v|3gp|3g2|avi|mkv|webm|mts|m2ts|mpe?g|wmv|flv)$/i, "🎬"],
+  [VIDEO_NAME, "🎬"],
   [/\.(mp3|m4a|flac|wav|aac|ogg|opus|aiff?)$/i, "🎵"],
   [/\.(zip|rar|7z|tar|gz|tgz|bz2|xz|dmg|iso)$/i, "🗜️"],
   [/\.pdf$/i, "📕"],
@@ -1128,7 +1165,11 @@ function renderLabelViews() {
   for (const button of document.querySelectorAll<HTMLButtonElement>("#view-toggle button")) {
     button.setAttribute("aria-pressed", String(button.dataset.view === placesView));
   }
-  $("#slideshow-btn").classList.toggle("hidden", !view.startsWith("label:"));
+  // The slideshow shows photos: not offered where O2 grouped only videos
+  // (a «Un día como hoy» can be just that).
+  const files = state.listing?.files ?? [];
+  const onlyVideos = files.length > 0 && files.every((f) => VIDEO_NAME.test(f.name));
+  $("#slideshow-btn").classList.toggle("hidden", !view.startsWith("label:") || onlyVideos);
   $("#play-music-btn").classList.toggle("hidden", view !== "media:music" || !state.listing?.files.length);
   // Nothing goes into a moment or place (O2 makes them), and none of these
   // views is a folder to create one in. Música and Documentos take uploads:
@@ -4084,24 +4125,74 @@ async function indexLibraryManifests() {
   }
 }
 
+/** Show a CLI release found on GitHub in Settings and, if it's newer, the
+ * button to install it. */
+function showCliRelease(release: CliRelease) {
+  const result = $("#cli-update-result");
+  const install = $("#settings-install-update");
+  state.pendingRelease = release;
+  if (release.update_available && release.latest && release.asset_url) {
+    result.textContent = `Hay una versión nueva: ${release.latest} (actual: ${release.current}).`;
+    install.textContent = `Actualizar CLI a ${release.latest}`;
+    install.classList.remove("hidden");
+  } else {
+    result.textContent = release.latest
+      ? `Estás al día (${release.current}). Última publicada: ${release.latest}.`
+      : "No se pudo determinar la última versión.";
+    install.classList.add("hidden");
+  }
+}
+
 async function checkCliUpdate() {
   const result = $("#cli-update-result");
   result.textContent = "Consultando GitHub…";
   $("#settings-install-update").classList.add("hidden");
   try {
-    const release = await invoke<CliRelease>("check_cli_update");
-    state.pendingRelease = release;
-    if (release.update_available && release.latest && release.asset_url) {
-      result.textContent = `Hay una versión nueva: ${release.latest} (actual: ${release.current}).`;
-      $("#settings-install-update").classList.remove("hidden");
-    } else if (release.latest) {
-      result.textContent = `Estás al día (${release.current}). Última publicada: ${release.latest}.`;
-    } else {
-      result.textContent = "No se pudo determinar la última versión.";
-    }
+    showCliRelease(await invoke<CliRelease>("check_cli_update"));
   } catch (error) {
     result.textContent = String(error);
   }
+}
+
+/** Closes the notification of a new CLI, if it's showing. */
+let dismissCliUpdateNotice: (() => void) | null = null;
+
+/**
+ * On startup, ask GitHub whether there's a newer CLI and, if there is, say
+ * so with a button that opens Settings at «Actualizar CLI». Offline or
+ * without an answer it says nothing. Not with `O2CLOUD_CLI`: that CLI was
+ * chosen by hand, and one installed from Settings wouldn't replace it.
+ */
+async function notifyCliUpdate() {
+  if (state.cli?.source === "env") return;
+  let release: CliRelease;
+  try {
+    release = await invoke<CliRelease>("check_cli_update");
+  } catch {
+    return;
+  }
+  showCliRelease(release);
+  if (!release.update_available || !release.latest || !release.asset_url) return;
+  // Settings is already open (no CLI yet, or too old) with the button ready.
+  if (!$("#settings-modal").classList.contains("hidden")) return;
+  const current = state.cli?.available ? ` (tienes la ${release.current})` : "";
+  dismissCliUpdateNotice = toast(
+    `Hay una versión nueva del CLI de O2 Cloud: ${release.latest}${current}.`,
+    "info",
+    0,
+    { label: "Abrir Ajustes para actualizar", run: openCliUpdate },
+  );
+}
+
+/** Open Settings with focus on «Actualizar CLI». */
+function openCliUpdate() {
+  showSettings();
+  // Runs before the dialog's own focus handling, which then leaves it.
+  window.setTimeout(() => {
+    const install = $("#settings-install-update");
+    install.scrollIntoView({ block: "center" });
+    install.focus();
+  }, 0);
 }
 
 async function installCliUpdate() {
@@ -4121,6 +4212,10 @@ async function installCliUpdate() {
       url: release.asset_url,
     });
     state.cli = info;
+    // Installed: nothing left to update until the next check finds more.
+    state.pendingRelease = null;
+    $("#settings-install-update").classList.add("hidden");
+    dismissCliUpdateNotice?.();
     populateSettings();
     result.textContent = `CLI actualizado a ${info.version}.`;
     finishOperation(operation, "CLI actualizado");
@@ -4555,6 +4650,9 @@ async function bootstrap() {
     if (!isTyping(event.target)) event.preventDefault();
   });
   window.addEventListener("keydown", onKeyDown);
+
+  // Alongside loading the account: GitHub may answer slowly or not at all.
+  void notifyCliUpdate();
 
   // Only now load the account: a listing can take ~50 s on a large account,
   // and the window must stay usable (creating a folder, opening Photos,…)

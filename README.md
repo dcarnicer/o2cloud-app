@@ -226,7 +226,10 @@ when O2 rejects a file whose extension doesn't match what it is (`MED-1050`,
 extension to use. 1.4.1 finds a file uploaded moments ago by its path, which
 the app's split-file downloads use.
 Settings only offers updates within the supported major version (1.x), and
-older CLIs are detected but not used.
+older CLIs are detected but not used. On startup the app asks GitHub for the
+latest CLI; if it's newer, a notification links to Settings with
+«Actualizar CLI» ready (not when `O2CLOUD_CLI` is set, and nothing is said
+offline).
 
 The CLI also brought the earlier performance work: 0.10 made `download`/`rm`
 by ID or path take 3 requests instead of listing
@@ -368,6 +371,26 @@ stdout; progress stays on stderr.
 - Test: update from the previous release on macOS/Windows/Linux, offline and
   interrupted downloads, invalid signatures, downgrade attempts, update while
   an upload/download is running, and GUI/CLI version-mismatch handling.
+
+### Lugares: the map by default
+
+- Open Lugares on the map instead of the list, and remember the last choice
+  (today it always starts as a list and forgets «Mapa»).
+- The map loads OpenStreetMap tiles, so OpenStreetMap would see the areas
+  viewed on every visit, not only after choosing «Mapa». Say so where the
+  map first appears and update the known limitation.
+
+### File previews
+
+- Preview images without downloading them: thumbnails in the file list and a
+  larger view (Space or double-click, arrows for the next and previous one),
+  from the signed `thumbnail`/`preview` links O2 gives, as Momentos and the
+  slideshow already use (the CLI returns them for labels and `media`).
+- Then videos and audio, streamed from the signed link as Música does, and
+  PDFs. Other files keep the download.
+- Ask only for the visible rows' thumbnails and cache them, as Photos does, so
+  a folder of 46,000 files stays fast; links expire, so ask for fresh ones
+  when one fails.
 
 ### CLI split support: next steps
 

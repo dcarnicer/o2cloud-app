@@ -452,6 +452,23 @@ los tres como `source: "file"`. En la repetición,
 - [ ] Windows/Linux: con una CLI gestionada más antigua que la incluida, la
       app debe usar la incluida (Ajustes muestra «bundled» y su versión).
 
+### 18. Aviso de CLI nueva y pase de vídeos — 0.2.4 (27 nov 2026)
+
+- [x] Al arrancar con una CLI más antigua que la última de GitHub (build de
+      desarrollo con la gestionada 1.2.1 y sin la incluida) sale el aviso
+      «Hay una versión nueva del CLI de O2 Cloud: 1.4.1 (tienes la 1.2.1).»,
+      que no se va solo y tiene «Abrir Ajustes para actualizar» y ✕.
+- [x] El botón del aviso abre Ajustes con «Actualizar CLI a 1.4.1» listo;
+      tras actualizar, el botón desaparece (antes seguía activo).
+- [x] Pase: el momento «Un día como hoy, hace 7 años» (4 `.mov`) decía «No
+      hay fotos que mostrar aquí». El botón ya no se ofrece donde todo son
+      vídeos (comprobados los nombres; 39 de 40 momentos revisados tienen
+      fotos y su pase).
+- [ ] Ver en la app instalada que ese momento no muestra «Ver como pase» y
+      que uno con fotos sí.
+- [ ] Sin conexión o con GitHub caído, el arranque no muestra nada ni se
+      retrasa.
+
 ## Cómo limpiar después de una prueba
 
 - Borrar el archivo o la carpeta de prueba de O2.

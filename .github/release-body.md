@@ -4,23 +4,26 @@ built with Tauri 2 and backed by
 
 ## Changes
 
-- **The bundled CLI is used again:** a CLI updated once from Settings no
-  longer hides a newer one bundled with the app; the app runs the newer of
-  the two. 0.2.1 and 0.2.2 kept running the one from Settings, so their CLI
-  fixes didn't reach anyone who had ever updated it there.
+- **New CLI notice:** on startup the app checks GitHub for a newer o2cloud CLI
+  and, if there is one, shows a notification with a button that opens
+  Settings at «Actualizar CLI». It stays until it's closed, and says nothing
+  when offline.
+- **«Actualizar CLI» no longer stays enabled** after a successful update; the
+  button goes away until a newer version turns up.
+- **Pase:** «Ver como pase» is no longer offered in a moment or place with
+  only videos (the slideshow shows photos), where it said there was nothing
+  to show.
 - **o2cloud CLI 1.4.1** bundled on macOS, Windows and Linux; the app requires
-  1.2+ within 1.x and only offers CLI updates within that major version.
-- **Wrong extensions:** when O2 rejects a file because its extension doesn't
-  match what it is (an iPhone HEIC photo renamed `.jpg`, `MED-1050`), the
-  transfer row says what the file really is and which extension to give it.
-- **Split files just uploaded** can be downloaded right away: CLI 1.4.1 finds
-  them by path before O2 lists them.
+  1.2+ within 1.x, runs the newer of the bundled CLI and one updated from
+  Settings, and only offers CLI updates within that major version.
 - **Linux:** the bundled CLI is still built from source on Ubuntu 22.04, so the
   installers keep working there; the official Linux asset needs GLIBC 2.39.
-- Includes everything from 0.2.1 (overwriting a recent upload waits for O2,
-  `MED-1017`) and 0.2.0: Recuerdos (Momentos, Lugares, Personas), Pase,
-  Biblioteca (Música and Documentos), upload conflicts, `--json-lines`
-  progress and SHA-256, and the accessibility pass.
+- Includes everything from 0.2.3 (the bundled CLI is used again), 0.2.2
+  (wrong-extension messages in Spanish, split files downloadable right after
+  upload), 0.2.1 (overwriting a recent upload waits for O2, `MED-1017`) and
+  0.2.0: Recuerdos (Momentos, Lugares, Personas), Pase, Biblioteca (Música and
+  Documentos), upload conflicts, `--json-lines` progress and SHA-256, and the
+  accessibility pass.
 
 ## Downloads
 

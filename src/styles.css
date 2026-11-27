@@ -1629,6 +1629,32 @@ button:disabled {
   background: #b91c1c;
 }
 
+/* One with a button takes clicks (the container lets them through). */
+.toast.actionable {
+  pointer-events: auto;
+  padding-right: 6px;
+}
+
+.toast-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.toast-body .secondary-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.toast .toast-close {
+  width: 24px;
+  height: 24px;
+  margin: -4px 0 0;
+  font-size: 12px;
+}
+
 .toast.leaving {
   opacity: 0;
   transform: translateY(4px);
