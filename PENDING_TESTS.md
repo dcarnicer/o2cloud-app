@@ -427,8 +427,16 @@ los tres como `source: "file"`. En la repetición,
       de fallar con «Not found».
 - [ ] `live_cli` con 1.4.1 (incluye el caso de sobrescritura de la
       sección 16).
-- [ ] La próxima release incluye `o2cloud` 1.4.1 en macOS, Windows y Linux, y
-      el build de Linux desde `v1.4.1` no pide GLIBC 2.39.
+- [x] Release **v0.2.2** publicada el 27 nov 2026: macOS universal
+      `.dmg`/`.app.tar.gz`, Windows `.msi`/`.exe`, Linux `.deb`/`.AppImage`
+      y `SHA256SUMS.txt`; las 6 sumas verificadas. El `.dmg` montado declara
+      la app 0.2.2, es universal (arm64 + x86_64) y lleva el CLI 1.4.1 en las
+      dos arquitecturas; los logs de Windows y Linux responden
+      `o2cloud 1.4.1`. La descarga pública del `.dmg` coincide con
+      `SHA256SUMS.txt`.
+- [ ] Linux 22.04: comprobar que el instalador de `v0.2.2` (CLI compilado
+      desde `v1.4.1`) no pide GLIBC 2.39.
+- [ ] Probar los instaladores de `v0.2.2` en Windows y Linux.
 
 ## Cómo limpiar después de una prueba
 
