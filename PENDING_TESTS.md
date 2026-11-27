@@ -327,7 +327,7 @@ los tres como `source: "file"`. En la repetición,
 - [x] Verificar que cada instalador de `v0.1.0` incluye `o2cloud` 0.12.0:
       macOS con las dos arquitecturas, Windows en NSIS y MSI, y Linux en
       `.deb`/`.AppImage`.
-- [ ] Verificar que la próxima release incluye `o2cloud` 1.3.1 en las tres
+- [x] Verificar que la release `v0.2.1` incluye `o2cloud` 1.3.1 en las tres
       plataformas.
 - [ ] Instalar cada artefacto en una máquina limpia y comprobar el aviso de
       Gatekeeper/SmartScreen y que la app arranca.
@@ -394,14 +394,22 @@ los tres como `source: "file"`. En la repetición,
 - [ ] `live_cli` con 1.3.1: el caso de sobrescribir un archivo subido
       segundos antes debe pasar (CLI 1.2.2 espera a O2; la app trata los
       eventos `waiting` como actividad y no los confunde con un atasco).
+      Pendiente: la sesión de O2 está caducada.
 - [ ] Comprobar que una sobrescritura lenta no dispara el watchdog de 3 min
       y que la fila muestra «O2 está comprobando una copia reciente…».
-- [ ] Verificar que la próxima release incluye `o2cloud` 1.3.1 en macOS,
-      Windows y Linux, y que Ajustes lo muestra como `bundled`.
+- [x] La release **v0.2.1** incluye `o2cloud` 1.3.1 en macOS, Windows y Linux
+      (los dos binarios del `.dmg` universal responden `o2cloud 1.3.1`).
 - [ ] Linux 22.04: compilar `v1.3.1` desde fuente y comprobar que el
       instalador resultante no pide GLIBC 2.39.
-- [ ] Confirmar que la GUI no usa `upload-dir --update --delete` y que los
-      comandos existentes (`upload`, `ls`, `download`…) no cambian con 1.3.1.
+- [x] Revisado: la GUI no llama a `upload-dir --update --delete`; los comandos
+      existentes (`upload`, `ls`, `download`…) no cambian con 1.3.1.
+- [x] Release **v0.2.1** publicada el 27 nov 2026: macOS universal
+      `.dmg`/`.app.tar.gz`, Windows `.msi`/`.exe`, Linux `.deb`/`.AppImage`
+      y `SHA256SUMS.txt`; las 6 sumas verificadas. El `.dmg` montado declara
+      la app 0.2.1, es universal (arm64 + x86_64) y lleva el CLI 1.3.1 en las
+      dos arquitecturas. La descarga pública del `.exe` y de `SHA256SUMS.txt`
+      también coincide.
+- [ ] Probar los instaladores de `v0.2.1` en Windows y Linux.
 
 ## Cómo limpiar después de una prueba
 

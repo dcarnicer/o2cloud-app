@@ -61,8 +61,9 @@ Tested on macOS 27 (Apple Silicon) against a real O2 Spain account:
 - macOS bundle: the debug `.app` carries `NSPhotoLibraryUsageDescription` and `LSMinimumSystemVersion` 10.15, so the Photos permission is declared where TCC looks for it.
 
 The bundled CLI is now **1.3.1**, and the app requires 1.2 or later within 1.x.
-The last full smoke test (26 Nov 2026) used 1.2.1; the 1.3.1 checks are tracked
-in [`PENDING_TESTS.md`](PENDING_TESTS.md).
+The 0.2.1 macOS bundle was smoke-tested (app 0.2.1, CLI 1.3.1 in both slices);
+the full 1.3.1 account checks are tracked in
+[`PENDING_TESTS.md`](PENDING_TESTS.md).
 A smoke on 26 Nov 2026 against the real account passed: `status`/`quota`,
 root and whole-account `ls`, `mkdir`, upload/download/rm, a 25 KB split with
 join + SHA-256, resume after deleting one part, `--on-conflict
