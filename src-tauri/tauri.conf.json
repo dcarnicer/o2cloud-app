@@ -40,5 +40,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQwQjc3NEU1MUREMTQxN0YKUldSL1FkRWQ1WFMzUURsaWZoVG1za3REbzhSN0tRSjJWMFhwNUVwUC9obzQ2bGlnVlc2TjdnT3oK",
+      "endpoints": [
+        "https://github.com/dcarnicer/o2cloud-app/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

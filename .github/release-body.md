@@ -4,26 +4,22 @@ built with Tauri 2 and backed by
 
 ## Changes
 
-- **New CLI notice:** on startup the app checks GitHub for a newer o2cloud CLI
-  and, if there is one, shows a notification with a button that opens
-  Settings at «Actualizar CLI». It stays until it's closed, and says nothing
-  when offline.
-- **«Actualizar CLI» no longer stays enabled** after a successful update; the
-  button goes away until a newer version turns up.
-- **Pase:** «Ver como pase» is no longer offered in a moment or place with
-  only videos (the slideshow shows photos), where it said there was nothing
-  to show.
-- **o2cloud CLI 1.4.1** bundled on macOS, Windows and Linux; the app requires
-  1.2+ within 1.x, runs the newer of the bundled CLI and one updated from
-  Settings, and only offers CLI updates within that major version.
-- **Linux:** the bundled CLI is still built from source on Ubuntu 22.04, so the
-  installers keep working there; the official Linux asset needs GLIBC 2.39.
-- Includes everything from 0.2.3 (the bundled CLI is used again), 0.2.2
-  (wrong-extension messages in Spanish, split files downloadable right after
-  upload), 0.2.1 (overwriting a recent upload waits for O2, `MED-1017`) and
-  0.2.0: Recuerdos (Momentos, Lugares, Personas), Pase, Biblioteca (Música and
+- **The app updates itself:** on startup it checks the latest release and, if
+  there is a newer version, a notification opens Settings at **App O2 Cloud →
+  Actualizar y reiniciar**. Settings can also check by hand. Updates are
+  signed with the app's own key and refused otherwise, wait for transfers to
+  finish, and use the same kind of installer as the installed app, so no
+  second copy is left. **Install this version by hand once**; later ones
+  arrive through the app.
+- Includes everything from 0.2.4 (new CLI notice, «Actualizar CLI» hides after
+  updating, no «Ver como pase» for video-only moments), 0.2.3 (the bundled CLI
+  is used again), 0.2.2 (CLI 1.4.1, wrong-extension messages in Spanish),
+  0.2.1 (overwriting a recent upload waits for O2, `MED-1017`) and 0.2.0:
+  Recuerdos (Momentos, Lugares, Personas), Pase, Biblioteca (Música and
   Documentos), upload conflicts, `--json-lines` progress and SHA-256, and the
   accessibility pass.
+- **o2cloud CLI 1.4.1** bundled on macOS, Windows and Linux (Linux built from
+  source on Ubuntu 22.04; the official Linux asset needs GLIBC 2.39).
 
 ## Downloads
 

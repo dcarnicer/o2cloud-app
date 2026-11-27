@@ -20,6 +20,10 @@ macOS is ad-hoc signed; Windows and Linux are unsigned. Keep the warning and
 the bypass instructions in the release body. Signing is optional future work,
 not a release requirement.
 
+The in-app updater does not wait for code signing. Its updates are signed with
+the app's own updater key (minisign, free), and the app refuses anything not
+signed with it; see [The updater signing key](#the-updater-signing-key).
+
 ## Rules
 
 - The app version lives in `package.json`, `package-lock.json`,
@@ -125,8 +129,10 @@ Pushing the tag triggers `.github/workflows/release.yml`. It:
 1. verifies the tag against all version files;
 2. creates the draft release from `.github/release-body.md`;
 3. builds macOS universal, Windows x64 and Linux x64;
-4. uploads the installers to the draft;
-5. writes and uploads `SHA256SUMS.txt`.
+4. uploads the installers and their updater signatures (`.sig`) to the draft;
+5. writes `latest.json` for the in-app updater from those signatures,
+   refusing any not made with the app's key;
+6. writes and uploads `SHA256SUMS.txt`.
 
 ## 6. Watch the workflow
 
@@ -143,6 +149,7 @@ create-release
 build (macos-latest, ...)
 build (windows-latest, ...)
 build (ubuntu-22.04, ...)
+updater-json
 checksums
 ```
 
@@ -151,9 +158,12 @@ Expected draft assets (names include the version):
 - macOS: universal `.dmg` (arm64 + x86_64).
 - Windows: `.msi` and NSIS `-setup.exe`.
 - Linux: `.AppImage` and `.deb`.
+- A `.sig` next to the macOS `.app.tar.gz`, both Windows installers and both
+  Linux packages.
+- `latest.json`.
 - `SHA256SUMS.txt`.
 
-All four build/checksum jobs must be green. If one fails, see
+All build, `updater-json` and checksum jobs must be green. If one fails, see
 [Recovering from a failed run](#recovering-from-a-failed-run).
 
 ## 7. Review the draft
@@ -195,6 +205,12 @@ Smoke-test the installers when possible:
 - Linux: run the `.AppImage` or install the `.deb`, check the same.
 - Re-run the opt-in `live_cli` with the bundled CLI: overwrite a file uploaded
   seconds earlier and confirm it waits for O2 instead of leaving two copies.
+- Check `latest.json`: its version is the tag's, and every platform points to
+  an asset of this release.
+
+```bash
+gh release download v0.2.0 --pattern latest.json --output - | jq '.version, (.platforms | map_values(.url))'
+```
 
 ## 8. Publish
 
@@ -210,8 +226,9 @@ For a prerelease, mark it and do not make it latest:
 gh release edit v0.2.0 --draft=false --prerelease --latest=false
 ```
 
-Do not enable the Tauri updater or publish `latest.json` until the builds are
-code-signed and notarized.
+Publishing makes the release GitHub's latest, and with it its `latest.json`:
+from then on every installed app from 0.2.5 on offers it on startup. A draft
+or prerelease is not offered.
 
 ## 9. After publishing
 
@@ -219,6 +236,9 @@ code-signed and notarized.
 - Confirm the downloaded file matches `SHA256SUMS.txt`.
 - Install on each platform and confirm the app lists files and Settings shows
   the CLI version/origin.
+- On a machine with the previous release installed, open it: it must offer the
+  new version, and «Actualizar y reiniciar» must leave the new version running
+  with no second copy of the app.
 - Update the release checklist in `PENDING_TESTS.md` if a platform was tested
   for the first time.
 - Announce the release with the public URL.
@@ -309,8 +329,40 @@ is available:
 For Windows, configure Authenticode signing in the Tauri bundle settings and
 remove the Windows unsigned warning. Linux packages can be signed separately.
 
-Only after all three platforms are signed should the OTA updater and
-`latest.json` be enabled.
+The in-app updater keeps working with code signing; it only needs its own
+key (below).
+
+## The updater signing key
+
+The app (0.2.5 and later) installs an update only if it is signed with the
+private key whose public half is `plugins.updater.pubkey` in
+`src-tauri/tauri.conf.json`.
+
+- Private key: `~/.tauri/o2cloud-app-updater.key` on the release Mac. Its
+  password is in the macOS Keychain as «O2 Cloud updater signing key
+  password» (service `o2cloud-app updater key password`).
+- CI reads both from the repository secrets `TAURI_SIGNING_PRIVATE_KEY` (the
+  key file's contents) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. The
+  `create-release` job fails at once if either is missing.
+- **Keep a backup of the key and its password** (a password manager). If the
+  key is lost, installed apps can never be updated again from the app: a new
+  key means a new `pubkey`, which only a manual install brings.
+- Never commit the private key. The public key is meant to be public.
+
+To set or replace the secrets:
+
+```bash
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/o2cloud-app-updater.key
+security find-generic-password -s "o2cloud-app updater key password" -w \
+  | tr -d '\n' | gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+```
+
+Local release builds with the release configs need the same two variables:
+
+```bash
+export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/o2cloud-app-updater.key)"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$(security find-generic-password -s "o2cloud-app updater key password" -w)"
+```
 
 ## Checklist
 
@@ -324,8 +376,9 @@ Copy this into the release pull request or issue:
 - [ ] commit "Release X.Y.Z" pushed to main
 - [ ] gitleaks green on that commit
 - [ ] annotated tag vX.Y.Z pushed
-- [ ] create-release, three builds and checksums are green
+- [ ] create-release, three builds, updater-json and checksums are green
 - [ ] SHA256SUMS.txt downloaded and verified
+- [ ] latest.json has this version and points to this release's assets
 - [ ] draft notes have a Changes section and the standard warnings
 - [ ] installers smoke-tested on macOS, Windows and Linux when available
 - [ ] release published (not draft), prerelease flag if needed

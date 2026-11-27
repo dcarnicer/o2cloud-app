@@ -32,6 +32,11 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Updates of the app itself, from the GitHub release's latest.json,
+        // checked against the public key in tauri.conf.json; and the restart
+        // after one.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .setup(|app| {
             let state = commands::AppState::new(app.handle());
             app.manage(state);

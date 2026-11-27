@@ -474,6 +474,25 @@ los tres como `source: "file"`. En la repetición,
 - [ ] Sin conexión o con GitHub caído, el arranque no muestra nada ni se
       retrasa.
 
+### 19. Actualizaciones de la app (OTA) — 0.2.5 (27 nov 2026)
+
+- [x] Clave de firma del updater creada en `~/.tauri/o2cloud-app-updater.key`
+      (contraseña en el Llavero); la pública va en `tauri.conf.json`.
+- [x] El job `updater-json` (probado en local con firmas reales) escribe las
+      8 claves de `latest.json`, rechaza una firma hecha con otra clave y
+      falla si falta la de algún instalador.
+- [ ] Secrets `TAURI_SIGNING_PRIVATE_KEY` y `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+      en el repo (sin ellos `create-release` falla).
+- [ ] Release 0.2.5: assets `.sig` y `latest.json` con la versión y URLs de
+      la release. Instalarla a mano (las anteriores no tienen updater).
+- [ ] Con la 0.2.5 instalada y la 0.2.6 publicada: aviso al arrancar,
+      «Actualizar a 0.2.6 y reiniciar» descarga, instala y reinicia en la
+      0.2.6, sin una segunda copia en `/Applications`.
+- [ ] Con una subida en curso, el botón no actualiza y lo dice.
+- [ ] Tras actualizar en macOS: ¿vuelve a pedir el permiso de Fotos?
+- [ ] Windows (NSIS y MSI) y Linux (AppImage y `.deb`): la actualización usa
+      el mismo instalador y no deja dos instalaciones.
+
 ## Cómo limpiar después de una prueba
 
 - Borrar el archivo o la carpeta de prueba de O2.

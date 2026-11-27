@@ -5,6 +5,9 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { confirm, open, save } from "@tauri-apps/plugin-dialog";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { getVersion } from "@tauri-apps/api/app";
 
 /** WebView2 on Windows reports "Windows"; WKWebView on macOS reports "Mac". */
 const IS_MAC = /Mac/i.test(navigator.userAgent);
@@ -3917,6 +3920,8 @@ function populateSettings() {
   ($("#slideshow-music") as HTMLSelectElement).value = state.settings.slideshow_music || "forget-me-not";
   ($("#hash-non-media") as HTMLInputElement).checked = state.settings.hash_non_media;
 
+  $("#settings-app-info").textContent = appVersion ? `Versión: ${appVersion}` : "";
+
   const cliDetails = $("#settings-cli-info");
   cliDetails.replaceChildren();
   if (state.cli?.available) {
@@ -4180,19 +4185,139 @@ async function notifyCliUpdate() {
     `Hay una versión nueva del CLI de O2 Cloud: ${release.latest}${current}.`,
     "info",
     0,
-    { label: "Abrir Ajustes para actualizar", run: openCliUpdate },
+    {
+      label: "Abrir Ajustes para actualizar",
+      run: () => openSettingsAt("#settings-install-update"),
+    },
   );
 }
 
-/** Open Settings with focus on «Actualizar CLI». */
-function openCliUpdate() {
+/** Open Settings with focus on one of its controls. */
+function openSettingsAt(selector: string) {
   showSettings();
   // Runs before the dialog's own focus handling, which then leaves it.
   window.setTimeout(() => {
-    const install = $("#settings-install-update");
-    install.scrollIntoView({ block: "center" });
-    install.focus();
+    const target = $(selector);
+    target.scrollIntoView({ block: "center" });
+    target.focus();
   }, 0);
+}
+
+// ---------- Updates of the app itself ----------
+
+/** The app's version, shown in Settings. */
+let appVersion = "";
+/** A newer version found by the last check, ready to install. */
+let pendingAppUpdate: Update | null = null;
+/** Closes the notification of a new app version, if it's showing. */
+let dismissAppUpdateNotice: (() => void) | null = null;
+
+/** Whether an upload, download or other operation is still going on. */
+function transfersRunning(): boolean {
+  return [...state.queue.values()].some((item) => !isFinished(item));
+}
+
+/** Show the result of a check in Settings and, if there's a newer version,
+ * the button to install it. */
+function showAppUpdate(update: Update | null) {
+  const result = $("#app-update-result");
+  const install = $("#settings-install-app-update");
+  pendingAppUpdate = update;
+  if (update) {
+    result.textContent = `Hay una versión nueva: ${update.version} (actual: ${update.currentVersion}).`;
+    install.textContent = `Actualizar a ${update.version} y reiniciar`;
+    install.classList.remove("hidden");
+  } else {
+    result.textContent = `Estás al día (${appVersion}).`;
+    install.classList.add("hidden");
+  }
+}
+
+async function checkAppUpdate() {
+  const result = $("#app-update-result");
+  result.textContent = "Consultando GitHub…";
+  $("#settings-install-app-update").classList.add("hidden");
+  try {
+    showAppUpdate(await check());
+  } catch (error) {
+    result.textContent = `No se pudo comprobar: ${String(error)}`;
+  }
+}
+
+/**
+ * On startup, ask the latest release on GitHub whether there's a newer app
+ * and, if there is, say so with a button that opens Settings at
+ * «Actualizar y reiniciar». Offline or without an answer it says nothing.
+ */
+async function notifyAppUpdate() {
+  let update: Update | null;
+  try {
+    update = await check();
+  } catch {
+    return;
+  }
+  showAppUpdate(update);
+  if (!update) return;
+  dismissAppUpdateNotice = toast(
+    `Hay una versión nueva de O2 Cloud: ${update.version} (tienes la ${update.currentVersion}).`,
+    "info",
+    0,
+    {
+      label: "Abrir Ajustes para actualizar",
+      run: () => openSettingsAt("#settings-install-app-update"),
+    },
+  );
+}
+
+/**
+ * Download the new version, check its signature, install it and restart.
+ * Not while a transfer runs: the restart (and on Windows the installer)
+ * would cut it.
+ */
+async function installAppUpdate() {
+  const update = pendingAppUpdate;
+  if (!update) return;
+  const result = $("#app-update-result");
+  if (transfersRunning()) {
+    result.textContent =
+      "Hay transferencias en curso. Cuando terminen, vuelve a pulsar «Actualizar».";
+    return;
+  }
+  const button = $("#settings-install-app-update") as HTMLButtonElement;
+  button.disabled = true;
+  dismissAppUpdateNotice?.();
+  let total = 0;
+  let received = 0;
+  result.textContent = `Descargando ${update.version}…`;
+  try {
+    await update.downloadAndInstall((event) => {
+      if (event.event === "Started") {
+        total = event.data.contentLength ?? 0;
+      } else if (event.event === "Progress") {
+        received += event.data.chunkLength;
+        result.textContent = total
+          ? `Descargando ${update.version}… ${Math.min(100, Math.round((received * 100) / total))} %`
+          : `Descargando ${update.version}… ${formatSize(received)}`;
+      } else if (event.event === "Finished") {
+        result.textContent = `Instalando ${update.version}…`;
+      }
+    });
+  } catch (error) {
+    result.textContent = `No se pudo actualizar: ${String(error)}`;
+    button.disabled = false;
+    return;
+  }
+  // Installed. A transfer started meanwhile goes on; the new version
+  // starts with the next launch.
+  if (transfersRunning()) {
+    result.textContent = `${update.version} instalada. Se usará al volver a abrir O2 Cloud.`;
+    button.classList.add("hidden");
+    button.disabled = false;
+    pendingAppUpdate = null;
+    return;
+  }
+  result.textContent = "Reiniciando…";
+  await relaunch();
 }
 
 async function installCliUpdate() {
@@ -4396,6 +4521,12 @@ async function bootstrap() {
   }
 
   try {
+    appVersion = await getVersion();
+  } catch {
+    // Settings just doesn't show it.
+  }
+
+  try {
     state.settings = await invoke<Settings>("get_settings");
     renderPlaces();
   } catch {
@@ -4532,6 +4663,8 @@ async function bootstrap() {
   );
   $("#settings-library-forget").addEventListener("click", () => void forgetUploadLibrary());
   $("#settings-library-index").addEventListener("click", () => void indexLibraryManifests());
+  $("#settings-check-app-update").addEventListener("click", () => void checkAppUpdate());
+  $("#settings-install-app-update").addEventListener("click", () => void installAppUpdate());
   $("#settings-check-update").addEventListener("click", () => void checkCliUpdate());
   $("#settings-install-update").addEventListener("click", () => void installCliUpdate());
   $("#settings-login").addEventListener("click", () => {
@@ -4652,6 +4785,7 @@ async function bootstrap() {
   window.addEventListener("keydown", onKeyDown);
 
   // Alongside loading the account: GitHub may answer slowly or not at all.
+  void notifyAppUpdate();
   void notifyCliUpdate();
 
   // Only now load the account: a listing can take ~50 s on a large account,

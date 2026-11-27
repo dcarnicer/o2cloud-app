@@ -4,6 +4,7 @@
     "resources": [
       "bin/macos-aarch64/o2cloud",
       "bin/macos-x86_64/o2cloud"
-    ]
+    ],
+    "createUpdaterArtifacts": true
   }
 }

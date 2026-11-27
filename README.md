@@ -206,8 +206,17 @@ checksums and smoke-test the installers before publishing it.
 These artifacts are **not code-signed**: macOS is ad-hoc signed but not
 notarized, and Windows/Linux are unsigned. Gatekeeper and SmartScreen will warn
 on other machines. This is intentional for a free personal project; manual
-downloads work after confirming the prompt. Code signing and notarization
-would only be required to enable the OTA updater.
+downloads work after confirming the prompt.
+
+From 0.2.5 the app updates itself: on startup it reads `latest.json` from the
+latest GitHub release and, if there is a newer version, offers it with a
+notification and in Settings (**App O2 Cloud → Actualizar y reiniciar**). The
+update is installed only if it is signed with the app's own updater key
+(minisign, independent of code signing), never while a transfer runs, and with
+the same kind of installer the app came from (`.app`, NSIS or MSI, AppImage or
+`.deb`), so it leaves no second copy. Versions before 0.2.5 have no updater:
+install 0.2.5 by hand once. The key and the release steps are in
+[`RELEASING.md`](RELEASING.md#the-updater-signing-key).
 
 ## CLI management
 
@@ -331,7 +340,7 @@ stdout; progress stays on stderr.
 - The virtual camera folder is a heuristic. It may include downloaded photos and excludes some unusual camera filenames. It is a UI view; the O2 web UI still shows everything at the root.
 - Chunked files are visible as parts in the O2 web/app. Do not rename or delete individual parts.
 - The Photos view loads pages of 300 and requests thumbnails for the visible rows; counting the library for the summary walks every asset, so the first «Fotos y vídeos» page takes about 1–2 minutes with 52,000 items. An iCloud download can be cancelled, and the app checks for the original's size plus 128 MB of free space before downloading it.
-- Photos permission is tied to the app's code signature. An ad-hoc development build may ask for it again after a rebuild.
+- Photos permission is tied to the app's code signature. An ad-hoc development build may ask for it again after a rebuild, and so may an update installed from the app.
 - Hashing non-media files before upload is opt-in. It reads each selected file once, applies to individual files (folders keep the name+size check) and, when the selection has no media, uses the shared library instead of a whole-account scan.
 - The shared library lives in `/.o2cloud-gui/library/` inside the O2 account. The app hides that folder, but the O2 web UI shows it and its snapshot files. Do not delete it there unless you are willing to lose the shared hashes; the app recreates the folder but not the old snapshots. The `-gui` suffix keeps the plain `.o2cloud` name free for the official app.
 - Matching against files that are not in the library yet uses a whole-account listing (`ls -a`): about 5.6 s the first time and 0.3 s after that with CLI 0.12, and the app caches it for 5 minutes.
@@ -353,24 +362,18 @@ stdout; progress stays on stderr.
 
 ### OTA updates: GUI and CLI
 
-- Add Tauri's updater plugin for the GUI: sign the update manifest and each
-  artifact (macOS `.app`/`.dmg`, Windows `.exe`/`.msi`, Linux AppImage/deb),
-  check for updates on launch and periodically, download in the background and
-  apply on restart.
-- Keep the managed CLI updater and show both versions in Settings. A GUI update
-  must not switch the CLI version on its own, and neither update should run
-  while a transfer is active.
-- Publish a per-platform `latest.json` (stable/beta channels), keep the
-  previous version for rollback, and refuse downgrades.
-- Prerequisites: Apple Developer ID and notarization for macOS (today the app
-  is ad-hoc signed), code signing for Windows, and signed Linux packages.
-- Preserve settings, the upload library, cached listings and the O2 session
-  across updates; verify that the new GUI can still list files before applying.
-- Add a manual «Buscar actualizaciones» path for both GUI and CLI, with clear
-  states (checking, downloading, ready to restart, failed).
-- Test: update from the previous release on macOS/Windows/Linux, offline and
-  interrupted downloads, invalid signatures, downgrade attempts, update while
-  an upload/download is running, and GUI/CLI version-mismatch handling.
+Done in 0.2.5: the app's own updater (signed `latest.json` per installer type,
+checked on startup and from Settings, not during transfers, restart after
+install) next to the CLI's; both offer a newer version with a notification
+that opens Settings. Next:
+
+- Check periodically while the app stays open, and download in the
+  background so the restart is the only wait.
+- Stable/beta channels, and keeping the previous version for a rollback.
+- Verify that the new version can still list files before switching to it.
+- Test: an update on Windows and Linux (NSIS, MSI, AppImage, `.deb`), offline
+  and interrupted downloads, a bad signature, and the Photos permission on
+  macOS after an update (the ad-hoc signature changes with each build).
 
 ### Lugares: the map by default
 

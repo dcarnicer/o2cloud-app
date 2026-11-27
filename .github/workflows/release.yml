@@ -68,6 +68,16 @@ jobs:
           print(f"Releasing {expected}")
           PY
 
+      - name: Check the updater signing key
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEY" ] || [ -z "$PASSWORD" ]; then
+            echo "::error::Set the TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets (see RELEASING.md)."
+            exit 1
+          fi
+
       - name: Create draft release
         id: release
         env:
@@ -235,6 +245,11 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the updater artifacts (.app.tar.gz, setup.exe, .msi,
+          # .AppImage, .deb); the app checks them against the public key in
+          # tauri.conf.json. latest.json is written by the updater-json job.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ github.ref_name }}
@@ -243,8 +258,108 @@ jobs:
           retryAttempts: 2
           args: ${{ matrix.args }}
 
-  checksums:
+  updater-json:
     needs: [create-release, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: src-tauri/tauri.conf.json
+          sparse-checkout-cone-mode: false
+
+      - name: Download the updater signatures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p sigs
+          gh release download "$TAG" --dir sigs --pattern "*.sig"
+          ls -l sigs
+
+      # One job after every build writes the whole manifest, so parallel
+      # builds can't overwrite each other's platforms. Each installer type
+      # gets its own key ({os}-{arch}-{bundle}), which the app looks up
+      # first: an .msi or .deb install is updated with an .msi or .deb, never
+      # with another installer that would leave a second copy.
+      - name: Write latest.json
+        env:
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import base64
+          import datetime
+          import json
+          import os
+          import pathlib
+
+          repo = os.environ["GH_REPO"]
+          tag = os.environ["TAG"]
+          base = f"https://github.com/{repo}/releases/download/{tag}"
+
+          def key_id(minisign_b64):
+              # A minisign key or signature: a comment line, then base64 of
+              # 2 bytes of algorithm, 8 of key ID and the rest.
+              line = base64.b64decode(minisign_b64).decode().splitlines()[1]
+              return base64.b64decode(line)[2:10]
+
+          with open("src-tauri/tauri.conf.json", encoding="utf-8") as f:
+              pubkey = json.load(f)["plugins"]["updater"]["pubkey"]
+          expected = key_id(pubkey)
+
+          sigs = {
+              p.name[: -len(".sig")]: p.read_text(encoding="utf-8").strip()
+              for p in pathlib.Path("sigs").glob("*.sig")
+          }
+
+          def entry(suffix):
+              names = [n for n in sigs if n.endswith(suffix)]
+              if len(names) != 1:
+                  raise SystemExit(f"Expected one {suffix} signature, found {names}")
+              name = names[0]
+              if key_id(sigs[name]) != expected:
+                  raise SystemExit(f"{name} is not signed with the app's updater key")
+              return {"signature": sigs[name], "url": f"{base}/{name}"}
+
+          mac = entry("_universal.app.tar.gz")
+          nsis = entry("-setup.exe")
+          msi = entry(".msi")
+          appimage = entry(".AppImage")
+          deb = entry(".deb")
+          manifest = {
+              "version": tag.removeprefix("v"),
+              "notes": f"https://github.com/{repo}/releases/tag/{tag}",
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime(
+                  "%Y-%m-%dT%H:%M:%SZ"
+              ),
+              "platforms": {
+                  # The universal app serves both Macs.
+                  "darwin-aarch64-app": mac,
+                  "darwin-x86_64-app": mac,
+                  "darwin-aarch64": mac,
+                  "darwin-x86_64": mac,
+                  "windows-x86_64-nsis": nsis,
+                  "windows-x86_64-msi": msi,
+                  "linux-x86_64-appimage": appimage,
+                  "linux-x86_64-deb": deb,
+              },
+          }
+          with open("latest.json", "w", encoding="utf-8") as f:
+              json.dump(manifest, f, indent=2)
+          print(json.dumps(manifest, indent=2))
+          PY
+
+      - name: Upload latest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: gh release upload "$TAG" latest.json --clobber
+
+  checksums:
+    needs: [create-release, build, updater-json]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
