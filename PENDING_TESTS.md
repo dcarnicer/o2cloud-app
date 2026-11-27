@@ -464,6 +464,11 @@ los tres como `source: "file"`. En la repetición,
       hay fotos que mostrar aquí». El botón ya no se ofrece donde todo son
       vídeos (comprobados los nombres; 39 de 40 momentos revisados tienen
       fotos y su pase).
+- [x] Release **v0.2.4** publicada el 27 nov 2026: las 6 sumas verificadas,
+      `.dmg` universal con la app 0.2.4 y el CLI 1.4.1 en las dos
+      arquitecturas, `o2cloud 1.4.1` en los logs de Windows y Linux; la
+      descarga pública coincide. Instalada en `/Applications` (una sola
+      copia); arranca con la CLI 1.4.1 y lista la cuenta.
 - [ ] Ver en la app instalada que ese momento no muestra «Ver como pase» y
       que uno con fotos sí.
 - [ ] Sin conexión o con GitHub caído, el arranque no muestra nada ni se
