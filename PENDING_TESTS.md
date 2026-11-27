@@ -441,6 +441,14 @@ los tres como `source: "file"`. En la repetición,
       ejecutaba la CLI gestionada 1.2.1 (`…/cli/versions/1.2.1/o2cloud`) en
       vez de la 1.4.1 incluida, porque la gestionada siempre ganaba. Pasaba
       igual con la 0.2.1. Corregido en 0.2.3: gana la más nueva de las dos.
+- [x] Release **v0.2.3** publicada el 27 nov 2026: las 6 sumas de
+      `SHA256SUMS.txt` verificadas, `.dmg` universal con la app 0.2.3 y el CLI
+      1.4.1 en las dos arquitecturas, y `o2cloud 1.4.1` en los logs de Windows
+      y Linux. La descarga pública del `.dmg` coincide. Instalada en
+      `/Applications` (una sola copia) sustituyendo a la 0.2.2.
+- [x] macOS, 0.2.3 instalada: con la CLI gestionada 1.2.1 ejecuta la incluida
+      (`Contents/Resources/bin/macos-aarch64/o2cloud`, 1.4.1); con la
+      gestionada 1.4.1 (empate) ejecuta la gestionada. Conecta y lista la raíz.
 - [ ] Windows/Linux: con una CLI gestionada más antigua que la incluida, la
       app debe usar la incluida (Ajustes muestra «bundled» y su versión).
 
