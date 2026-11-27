@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
@@ -323,24 +323,45 @@ async fn upload_attempt(
 ) -> Result<UploadOutput, String> {
     let args = upload_args(path, folder_id, on_conflict);
     let progress = Arc::new(AtomicU64::new(0));
+    let waiting = Arc::new(AtomicBool::new(false));
     let mut last = 0;
     let mut watchdog = Watchdog::new();
-    let exit = cli::run_events(app, cli_path, &args, progress.clone(), |_pid| {
-        let now = progress.load(Ordering::Relaxed);
-        if now > last {
-            last = now;
-            watchdog.moved();
-            sent(now, None);
-        }
-        // Data moves while the CLI sends the file. Before, it is getting
-        // ready (listing, waiting for recent uploads); after, O2 is storing
-        // what it got.
-        watchdog.check(if last > 0 && last < size {
-            STALLED_AFTER
-        } else {
-            WAITING_LIMIT
-        })
-    })
+    let exit = cli::run_events(
+        app,
+        cli_path,
+        &args,
+        progress.clone(),
+        waiting.clone(),
+        |_pid| {
+            // The CLI is waiting for O2 to validate a recent copy
+            // (`MED-1017`): a replacement may take up to 2 min per step,
+            // so this is not a stalled transfer.
+            if waiting.swap(false, Ordering::Relaxed) {
+                // The replacement starts after the file is sent: treat it
+                // as a completed upload, with O2's own wait as the limit.
+                last = size;
+                watchdog.moved();
+                sent(
+                    size,
+                    Some("O2 está comprobando una copia reciente; esperando…"),
+                );
+            }
+            let now = progress.load(Ordering::Relaxed);
+            if now > last {
+                last = now;
+                watchdog.moved();
+                sent(now, None);
+            }
+            // Data moves while the CLI sends the file. Before, it is getting
+            // ready (listing, waiting for recent uploads); after, O2 is storing
+            // what it got.
+            watchdog.check(if last > 0 && last < size {
+                STALLED_AFTER
+            } else {
+                WAITING_LIMIT
+            })
+        },
+    )
     .await?;
     upload_result(exit.code, &exit.output)
 }

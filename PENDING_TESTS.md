@@ -257,14 +257,14 @@ los tres como `source: "file"`. En la repetición,
       0.11/0.12); el CLI crea `name.NNN`, la app publica `name.o2split.json`,
       la descarga une y verifica el SHA-256, y el borrado elimina partes +
       manifiesto.
-- [ ] Archivo subido con el CLI 1.2.1 en partes `name.001`: comprobar la
+- [ ] Archivo subido con el CLI 1.3.1 en partes `name.001`: comprobar la
       agrupación en la app (Fase 1) y la descarga unida.
-- [ ] Flujo de actualización en Windows de 0.8.0/0.9.0 a 1.2.1, con sesión
+- [ ] Flujo de actualización en Windows de 0.8.0/0.9.0 a 1.3.1, con sesión
       activa y sin ella.
 - [ ] Linux/WSL2: comprobar que el asset 0.13.3+ pide GLIBC 2.39 y que el build
-      desde fuente con `v1.2.1` funciona en 22.04.
+      desde fuente con `v1.3.1` funciona en 22.04.
 - [x] Subir `MIN_VERSION` a **1.2.0** (PR #2). La app solo ofrece
-      actualizaciones dentro de 1.x; las releases incluyen 1.2.1.
+      actualizaciones dentro de 1.x; las releases incluyen 1.3.1.
 
 ### 10. Soporte de splits del CLI — Fase 1 hecha, Fase 2 híbrida en prueba
 
@@ -327,7 +327,7 @@ los tres como `source: "file"`. En la repetición,
 - [x] Verificar que cada instalador de `v0.1.0` incluye `o2cloud` 0.12.0:
       macOS con las dos arquitecturas, Windows en NSIS y MSI, y Linux en
       `.deb`/`.AppImage`.
-- [ ] Verificar que la próxima release incluye `o2cloud` 1.2.1 en las tres
+- [ ] Verificar que la próxima release incluye `o2cloud` 1.3.1 en las tres
       plataformas.
 - [ ] Instalar cada artefacto en una máquina limpia y comprobar el aviso de
       Gatekeeper/SmartScreen y que la app arranca.
@@ -377,11 +377,10 @@ los tres como `source: "file"`. En la repetición,
       duplicar (`app-emoji 😀.txt` → `app-emoji .txt`).
 - [x] `live_labels` con 1.2.1: 119 momentos, 268 lugares, 0 personas (sin
       reconocimiento facial), 898 canciones y 28.880 documentos.
-- [ ] `live_cli` falla solo al sobrescribir un archivo subido segundos antes:
-      O2 devuelve `MED-1017` al borrar la copia antigua y quedan las dos
-      copias; tras un minuto funciona. Reportado como
-      [o2cloud-cli#55](https://github.com/danielperez9430/o2cloud-cli/issues/55).
-      El resto de `live_cli` (subida, skip, conflicto, split, progreso) pasa.
+- [x] `live_cli` con 1.2.1: todo pasó salvo sobrescribir un archivo subido
+      segundos antes (O2 devolvía `MED-1017` al borrar la copia antigua y
+      quedaban las dos; [o2cloud-cli#55](https://github.com/danielperez9430/o2cloud-cli/issues/55)).
+      CLI 1.2.2 lo corrige; re-ejecutar con 1.3.1 (sección 16).
 - [x] Release **v0.2.0** publicada el 26 nov 2026: macOS universal
       `.dmg`/`.app.tar.gz`, Windows `.msi`/`.exe`, Linux `.deb`/`.AppImage`
       y `SHA256SUMS.txt`; las 6 sumas verificadas. El job de checksums falló
@@ -389,6 +388,20 @@ los tres como `source: "file"`. En la repetición,
       añadiendo `GH_REPO`), así que el fichero se subió y verificó a mano.
 - [ ] Probar la app nueva en Windows y Linux, y los instaladores de la release.
 - [ ] Caducidad de sesión a mitad de transferencia y error JSON en la UI.
+
+### 16. CLI 1.2.2–1.3.1 — pendiente (27 nov 2026)
+
+- [ ] `live_cli` con 1.3.1: el caso de sobrescribir un archivo subido
+      segundos antes debe pasar (CLI 1.2.2 espera a O2; la app trata los
+      eventos `waiting` como actividad y no los confunde con un atasco).
+- [ ] Comprobar que una sobrescritura lenta no dispara el watchdog de 3 min
+      y que la fila muestra «O2 está comprobando una copia reciente…».
+- [ ] Verificar que la próxima release incluye `o2cloud` 1.3.1 en macOS,
+      Windows y Linux, y que Ajustes lo muestra como `bundled`.
+- [ ] Linux 22.04: compilar `v1.3.1` desde fuente y comprobar que el
+      instalador resultante no pide GLIBC 2.39.
+- [ ] Confirmar que la GUI no usa `upload-dir --update --delete` y que los
+      comandos existentes (`upload`, `ls`, `download`…) no cambian con 1.3.1.
 
 ## Cómo limpiar después de una prueba
 

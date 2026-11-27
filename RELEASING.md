@@ -189,10 +189,12 @@ git log --oneline v0.1.0..v0.2.0
 Smoke-test the installers when possible:
 
 - macOS: mount the `.dmg`, open the app, accept the Gatekeeper prompt, check
-  that Settings shows the bundled CLI 1.2.1.
+  that Settings shows the bundled CLI 1.3.1.
 - Windows: install the `.msi` or `-setup.exe`, accept the SmartScreen prompt,
   check the same.
 - Linux: run the `.AppImage` or install the `.deb`, check the same.
+- Re-run the opt-in `live_cli` with the bundled CLI: overwrite a file uploaded
+  seconds earlier and confirm it waits for O2 instead of leaving two copies.
 
 ## 8. Publish
 
@@ -270,11 +272,11 @@ release. Bump the version.
 
 ## Changing the bundled CLI
 
-The workflow pins `o2cloud` 1.2.1 in three places:
+The workflow pins `o2cloud` 1.3.1 in three places:
 
 - macOS download URLs and SHA-256 hashes;
 - Windows download URL and SHA-256 hash;
-- Linux source tag and commit (`6ed5029`), built on Ubuntu 22.04.
+- Linux source tag and commit (`49c81bd`), built on Ubuntu 22.04.
 
 The CI-only configs `src-tauri/tauri.macos.release.conf.json`,
 `tauri.windows.release.conf.json` and `tauri.linux.release.conf.json` select the

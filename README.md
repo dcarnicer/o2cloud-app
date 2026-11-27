@@ -60,7 +60,9 @@ Tested on macOS 27 (Apple Silicon) against a real O2 Spain account:
 - Upload library: a snapshot was uploaded to, listed in, downloaded from and deleted from the real `/.o2cloud-gui/library/` folder; merge, fingerprint and prune unit tests pass. Syncing between two physical devices still needs an end-to-end run.
 - macOS bundle: the debug `.app` carries `NSPhotoLibraryUsageDescription` and `LSMinimumSystemVersion` 10.15, so the Photos permission is declared where TCC looks for it.
 
-The bundled CLI is now **1.2.1**, and the app requires 1.2 or later within 1.x.
+The bundled CLI is now **1.3.1**, and the app requires 1.2 or later within 1.x.
+The last full smoke test (26 Nov 2026) used 1.2.1; the 1.3.1 checks are tracked
+in [`PENDING_TESTS.md`](PENDING_TESTS.md).
 A smoke on 26 Nov 2026 against the real account passed: `status`/`quota`,
 root and whole-account `ls`, `mkdir`, upload/download/rm, a 25 KB split with
 join + SHA-256, resume after deleting one part, `--on-conflict
@@ -71,12 +73,13 @@ create/upload/download/delete flows, and the in-app CLI update from managed
 `live_labels` test passed with 119 moments, 268 places, 0 people (face
 recognition is off), 898 songs and 28,880 documents.
 
-The opt-in `live_cli` test fails in one edge case: overwriting a file uploaded
-seconds earlier. O2 rejects the old copy's delete with `MED-1017` (not
-validated yet) and the CLI leaves both copies; after a minute it works. This
-is reported upstream as
-[o2cloud-cli#55](https://github.com/danielperez9430/o2cloud-cli/issues/55);
-the app shows the CLI error, and the rest of the upload/conflict flow works.
+The opt-in `live_cli` test used to fail in one edge case: overwriting a file
+uploaded seconds earlier. O2 rejected the old copy's delete with `MED-1017`
+(not validated yet) and the CLI left both copies. CLI 1.2.2 fixed it by
+waiting for O2 to finish checking the recent copy (up to 2 minutes per step),
+and the app now treats its `waiting` events as activity so the transfer
+watchdog does not stop it. The test should be re-run with 1.3.1 before the
+next release.
 The macOS flows above were last exercised with 0.8.0; Windows/Linux and the
 3.5–4 GB `.o2part` comparison are still tracked in
 [`PENDING_TESTS.md`](PENDING_TESTS.md).
@@ -106,7 +109,7 @@ Pending validation tests are tracked in [`PENDING_TESTS.md`](PENDING_TESTS.md). 
 - macOS 10.15 or later, Windows 10/11 or Linux.
 - Rust 1.85+ and Node 22+ to build.
 - An O2 Cloud / Movistar Cloud account.
-- The `o2cloud` CLI from [`o2cloud-cli`](https://github.com/danielperez9430/o2cloud-cli). Release installers bundle 1.2.1 on macOS, Windows and Linux, and the app needs 1.2 or later within 1.x (Settings only offers updates within 1.x); local builds use `src-tauri/bin/<platform>/` when present, and the app can download the CLI from its GitHub release on first run.
+- The `o2cloud` CLI from [`o2cloud-cli`](https://github.com/danielperez9430/o2cloud-cli). Release installers bundle 1.3.1 on macOS, Windows and Linux, and the app needs 1.2 or later within 1.x (Settings only offers updates within 1.x); local builds use `src-tauri/bin/<platform>/` when present, and the app can download the CLI from its GitHub release on first run.
 - On Windows: Microsoft Edge WebView2 Runtime (included in Windows 10/11; the installer can bootstrap it) and the Visual Studio 2022 Build Tools with the «Desktop development with C++» workload for the MSVC Rust target.
 - On Linux: WebKitGTK 4.1 and GTK 3 development packages; the full `apt` command is in [`LINUX.md`](LINUX.md).
 - For «Subir desde Fotos»: permission to read the Photos library (macOS only).
@@ -196,7 +199,7 @@ git push origin v0.2.0
 
 CI verifies that the tag matches every version file, creates a draft release,
 builds macOS universal, Windows x64 and Linux x64, bundles the pinned `o2cloud`
-1.2.1 CLI, and uploads `SHA256SUMS.txt`. Review the draft, verify the
+1.3.1 CLI, and uploads `SHA256SUMS.txt`. Review the draft, verify the
 checksums and smoke-test the installers before publishing it.
 
 These artifacts are **not code-signed**: macOS is ad-hoc signed but not
@@ -208,12 +211,16 @@ would only be required to enable the OTA updater.
 ## CLI management
 
 The app requires `o2cloud` **1.2.0 or newer within 1.x**; release builds bundle
-**1.2.1**. 1.0 made the app rely on exit codes, JSON errors and
+**1.3.1**. 1.0 made the app rely on exit codes, JSON errors and
 `--on-conflict`; 1.1 added labels; 1.2 added `media`, labels' covers,
 locations and thumbnails, and lists a file as soon as it is uploaded. 1.2.1
 stops re-uploading names with emoji (O2 drops characters outside Unicode's
-BMP) and lists the name O2 keeps. Settings only offers updates within the
-supported major version (1.x), and older CLIs are detected but not used.
+BMP) and lists the name O2 keeps. 1.2.2 makes overwriting a file uploaded
+moments earlier wait for O2 to validate it (`MED-1017`), with `waiting`
+events that the app counts as activity. 1.3 adds
+`upload-dir --update --delete` to mirror a folder; the app does not use it.
+Settings only offers updates within the supported major version (1.x), and
+older CLIs are detected but not used.
 
 The CLI also brought the earlier performance work: 0.10 made `download`/`rm`
 by ID or path take 3 requests instead of listing
@@ -261,7 +268,7 @@ it against the account when there is an active session and makes it current.
 
 On Linux, the published 0.9.0–0.12.0 binaries required GLIBC 2.43; since
 0.13 they need GLIBC 2.39 (Ubuntu 24.04, Debian 13, Fedora 40 or newer). On
-older systems build `o2cloud-cli` 1.2.1 from source and place the binary at
+older systems build `o2cloud-cli` 1.3.1 from source and place the binary at
 `src-tauri/bin/linux-x86_64/o2cloud`; [`LINUX.md`](LINUX.md) has the
 commands.
 
@@ -270,14 +277,14 @@ needs updating.
 
 ### Bundled CLI
 
-Release builds bundle `o2cloud` **1.2.1** on every platform:
+Release builds bundle `o2cloud` **1.3.1** on every platform:
 
 - **macOS:** the official Apple Silicon and Intel binaries, so the universal
   app has the right one in each slice.
 - **Windows:** the official `o2cloud.exe`. Local Windows builds do not bundle
   it and download it on first run.
-- **Linux:** compiled from source at tag `v1.2.1`, pinned to commit
-  `6ed5029`, because the official 0.13.3+ binary needs GLIBC 2.39 and the app
+- **Linux:** compiled from source at tag `v1.3.1`, pinned to commit
+  `49c81bd`, because the official 0.13.3+ binary needs GLIBC 2.39 and the app
   still supports Ubuntu 22.04 (GLIBC 2.35). The official binary works on
   Ubuntu 24.04 and later.
 
@@ -285,13 +292,14 @@ Each release build passes a platform-specific config
 (`src-tauri/tauri.{macos,windows,linux}.release.conf.json`) so an installer only
 contains its own CLI binary.
 
-The 1.2.1 CLI includes the fix for accounts with negative `creationdate`
+The 1.3.1 CLI includes the fix for accounts with negative `creationdate`
 values ([o2cloud-cli#8](https://github.com/danielperez9430/o2cloud-cli/pull/8)),
 the download/ID/SAPI fixes from 0.9.0, the by-ID/path fast path from 0.10.0,
 the linear `ls` from 0.11.0, the file-list cache from 0.12.0, the pre-1970
 names/depth fixes and `fix-jpeg` from 0.13.x, `download-dir` from 0.14, the
-0.15.4 security fix, and the 1.x exit codes, JSON errors, `--on-conflict`,
-`--json-lines`, labels and media, so no local patch is applied.
+0.15.4 security fix, the 1.x exit codes, JSON errors, `--on-conflict`,
+`--json-lines`, labels and media, the `MED-1017` overwrite wait from 1.2.2,
+and the directory mirror from 1.3, so no local patch is applied.
 
 With `--json`, the payload (including new IDs) is a single JSON value on
 stdout; progress stays on stderr.
@@ -302,7 +310,7 @@ stdout; progress stays on stderr.
 - A web session ends after a while without use. CLI 1.x reports it with exit code 4 (no login window); the app maps it to its own sign-in prompt.
 - Changes made outside the app (phone, web) show up after the refresh button, or after 5 minutes.
 - A stale saved listing is shown with a «Pulsa Recargar» notice instead of refreshing automatically. Two large listing responses in quick succession can lose the second one in WKWebView, so the refresh is left to an explicit user action.
-- CLI 1.2.1 lists a file as soon as it is uploaded, but O2 may still be validating it. Overwriting a file uploaded seconds earlier can fail with `MED-1017` and leave both copies; retrying after a minute works. Reported upstream as [o2cloud-cli#55](https://github.com/danielperez9430/o2cloud-cli/issues/55).
+- Overwriting a file uploaded moments earlier can take up to 2 minutes per replacement step while O2 validates the recent copy (`MED-1017`); CLI 1.2.2+ waits for it instead of failing. If O2 takes longer, the CLI reports the error.
 - The map loads OpenStreetMap tiles only when `Mapa` is chosen; OpenStreetMap sees which areas are viewed, never the photos.
 - O2's internal API is unofficial and can change without notice.
 - The virtual camera folder is a heuristic. It may include downloaded photos and excludes some unusual camera filenames. It is a UI view; the O2 web UI still shows everything at the root.
@@ -320,9 +328,9 @@ stdout; progress stays on stderr.
 - Syncing the library between two physical Macs has not been tested end to end yet.
 - The macOS build is ad-hoc signed, not notarized. For personal use it runs locally; distributing it requires an Apple Developer ID. Release builds are ad-hoc signed too, so Gatekeeper warns on other Macs.
 - The Windows installers are not code-signed. SmartScreen may warn; for personal use, build from source or use the unsigned installer. Release builds are unsigned as well.
-- Linux release packages are unsigned. The Linux CLI is built from source in CI (1.2.1) so it runs on Ubuntu 22.04 and later; the official 0.13.3+ Linux binary needs GLIBC 2.39 and runs on Ubuntu 24.04 and later.
+- Linux release packages are unsigned. The Linux CLI is built from source in CI (1.3.1) so it runs on Ubuntu 22.04 and later; the official 0.13.3+ Linux binary needs GLIBC 2.39 and runs on Ubuntu 24.04 and later.
 - macOS ARM64 is the main tested target. Windows x86_64 builds, its unit tests pass and the main flows were tested against a real O2 account; very large chunked transfers, cancellation/resume and session expiry still need a Windows run. Linux x86_64 builds and runs under WSL2, but uploads/downloads, the CLI login window and native desktop packaging still need a Linux run. The CLI publishes macOS, Linux x86_64 and Windows x86_64 binaries (no Linux ARM64).
-- The published `o2cloud-cli` Linux 0.8.0–0.12.0 binaries need GLIBC 2.43; 0.13.3+ need GLIBC 2.39, so the official 1.2.1 binary runs on Ubuntu 24.04 and later. The app's release workflow builds from source on Ubuntu 22.04 to keep the 22.04+ installer working. Under WSLg, the CLI's login window fails; use a native Linux desktop or an existing `~/.config/o2cli/auth.json`.
+- The published `o2cloud-cli` Linux 0.8.0–0.12.0 binaries need GLIBC 2.43; 0.13.3+ need GLIBC 2.39, so the official 1.3.1 binary runs on Ubuntu 24.04 and later. The app's release workflow builds from source on Ubuntu 22.04 to keep the 22.04+ installer working. Under WSLg, the CLI's login window fails; use a native Linux desktop or an existing `~/.config/o2cli/auth.json`.
 - On Windows, upload progress comes from the CLI's `--json-lines` events, the same as on macOS; the old per-process I/O counters are gone.
 - Windows rejects some names that O2 accepts (`<>:"/\|?*`, `CON`, `PRN`, trailing dots/spaces, very long names). Downloads replace those characters and the saved file may have a slightly different name than the one shown in O2. Chunk temporary files use app-controlled names, so a remote part name cannot escape the download folder.
 
@@ -397,7 +405,7 @@ What a manual run showed with three videos of 4.4–7.2 GB on an "Optimize Mac S
 Use the official release asset:
 
 ```bash
-gh release download v1.2.1 --repo danielperez9430/o2cloud-cli \
+gh release download v1.3.1 --repo danielperez9430/o2cloud-cli \
   --pattern o2cloud-aarch64-apple-darwin.tar.gz
 tar -xzf o2cloud-aarch64-apple-darwin.tar.gz
 cp o2cloud /path/to/o2cloud-app/src-tauri/bin/macos-aarch64/o2cloud
@@ -408,7 +416,7 @@ Or build it from source:
 ```bash
 git clone https://github.com/danielperez9430/o2cloud-cli.git
 cd o2cloud-cli
-git checkout v1.2.1
+git checkout v1.3.1
 cargo build --release
 cp target/release/o2cloud /path/to/o2cloud-app/src-tauri/bin/macos-aarch64/o2cloud
 ```

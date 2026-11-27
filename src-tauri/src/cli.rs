@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
@@ -255,6 +255,7 @@ async fn collect_stream<R: AsyncRead + Unpin>(
     stream: &'static str,
     mut login_window: Option<tokio::sync::oneshot::Sender<()>>,
     progress: Option<Arc<AtomicU64>>,
+    waiting: Option<Arc<AtomicBool>>,
 ) -> String {
     let mut lines = BufReader::new(reader).lines();
     let mut collected = String::new();
@@ -266,6 +267,13 @@ async fn collect_stream<R: AsyncRead + Unpin>(
             }
             // Several a second: not worth a log line each.
             continue;
+        }
+        // `--json-lines`: a replacement is waiting for O2 to validate a
+        // recent copy (`MED-1017`). It is not a stalled transfer.
+        if let Some(waiting) = waiting.as_ref()
+            && is_waiting(&line)
+        {
+            waiting.store(true, Ordering::Relaxed);
         }
         if stream == "stderr"
             && opens_login_window(&line)
@@ -288,6 +296,15 @@ async fn collect_stream<R: AsyncRead + Unpin>(
         }
     }
     collected
+}
+
+/// Whether `line` is a `--json-lines` `waiting` event: the CLI is waiting
+/// for O2 to finish checking a copy uploaded moments ago (`MED-1017`).
+fn is_waiting(line: &str) -> bool {
+    line.starts_with('{')
+        && serde_json::from_str::<serde_json::Value>(line)
+            .map(|event| event["event"] == "waiting")
+            .unwrap_or(false)
 }
 
 /// The `bytes` of a `--json-lines` `progress` event, if `line` is one.
@@ -377,7 +394,7 @@ async fn run_watched_with_env(
     env: &[(&str, &str)],
     watch: impl FnMut(u32) -> ControlFlow<String>,
 ) -> Result<CliOutput, String> {
-    let exit = run_inner(app, path, args, env, None, watch).await?;
+    let exit = run_inner(app, path, args, env, None, None, watch).await?;
     if exit.code != 0 {
         let detail = if exit.output.stderr.trim().is_empty() {
             exit.output.stdout
@@ -390,17 +407,18 @@ async fn run_watched_with_env(
 }
 
 /// Run a CLI command with `--json-lines`: `progress` events go to
-/// `progress` (bytes sent so far) instead of the log, `watch` is called as
-/// in `run_watched`, and the exit code is returned with the output for the
-/// caller to read (the events are in `stdout`).
+/// `progress` (bytes sent so far), `waiting` events set `waiting`, `watch`
+/// is called as in `run_watched`, and the exit code is returned with the
+/// output for the caller to read (the events are in `stdout`).
 pub async fn run_events(
     app: &AppHandle,
     path: &Path,
     args: &[String],
     progress: Arc<AtomicU64>,
+    waiting: Arc<AtomicBool>,
     watch: impl FnMut(u32) -> ControlFlow<String>,
 ) -> Result<CliExit, String> {
-    run_inner(app, path, args, &[], Some(progress), watch).await
+    run_inner(app, path, args, &[], Some(progress), Some(waiting), watch).await
 }
 
 async fn run_inner(
@@ -409,6 +427,7 @@ async fn run_inner(
     args: &[String],
     env: &[(&str, &str)],
     progress: Option<Arc<AtomicU64>>,
+    waiting: Option<Arc<AtomicBool>>,
     mut watch: impl FnMut(u32) -> ControlFlow<String>,
 ) -> Result<CliExit, String> {
     let mut cmd = tokio::process::Command::new(path);
@@ -437,12 +456,14 @@ async fn run_inner(
         "stdout",
         None,
         progress,
+        waiting,
     ));
     let err_task = tokio::spawn(collect_stream(
         stderr,
         app.clone(),
         "stderr",
         Some(login_tx),
+        None,
         None,
     ));
 
@@ -821,6 +842,22 @@ mod tests {
         );
         assert_eq!(progress_bytes(r#"{"event":"file","bytes":1}"#), None);
         assert_eq!(progress_bytes("→ Uploading a.jpg"), None);
+    }
+
+    #[test]
+    fn recognizes_waiting_events() {
+        assert!(is_waiting(
+            r#"{"event":"waiting","name":"a.jpg","reason":"validating","code":"MED-1017"}"#
+        ));
+        // As the CLI writes it, keys in alphabetical order.
+        assert!(is_waiting(
+            r#"{"code":"MED-1017","event":"waiting","name":"a","reason":"validating"}"#
+        ));
+        assert!(is_waiting(
+            r#"{ "event": "waiting", "name": "a.jpg", "reason": "validating" }"#
+        ));
+        assert!(!is_waiting(r#"{"event":"progress","bytes":1}"#));
+        assert!(!is_waiting("→ Uploading a.jpg"));
     }
 
     #[test]
