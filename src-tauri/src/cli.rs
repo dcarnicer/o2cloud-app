@@ -180,7 +180,11 @@ fn parse_version(raw: &str) -> Option<String> {
         .map(|v| v.trim().to_string())
 }
 
-fn discover_cli(app: &AppHandle) -> Result<(PathBuf, String, String), String> {
+/// A CLI found: its path, version and source (`env`, `managed`, `bundled`
+/// or `system`).
+type FoundCli = (PathBuf, String, String);
+
+fn discover_cli(app: &AppHandle) -> Result<FoundCli, String> {
     let mut candidates: Vec<(PathBuf, String)> = Vec::new();
 
     if let Ok(path) = std::env::var("O2CLOUD_CLI") {
@@ -208,24 +212,41 @@ fn discover_cli(app: &AppHandle) -> Result<(PathBuf, String, String), String> {
         candidates.push((home.join(".cargo/bin").join(exe_name()), "system".into()));
     }
 
-    let mut unsupported: Option<(PathBuf, String, String)> = None;
-    for (path, source) in candidates {
-        if !path.is_file() {
-            continue;
-        }
-        if let Some(version) = version_of(&path) {
-            // Use an older CLI only if no candidate meets the minimum, so
-            // the app can still show which version needs updating.
-            if version_supported(&version) {
-                return Ok((path, version, source));
-            }
-            if unsupported.is_none() {
-                unsupported = Some((path, version, source));
-            }
-        }
-    }
+    let found: Vec<FoundCli> = candidates
+        .into_iter()
+        .filter(|(path, _)| path.is_file())
+        .filter_map(|(path, source)| version_of(&path).map(|version| (path, version, source)))
+        .collect();
 
-    unsupported.ok_or_else(|| "No se ha encontrado el CLI de O2 Cloud. Instálalo con `cargo install o2cloud-cli` o descarga un binario desde GitHub.".into())
+    choose_cli(&found).ok_or_else(|| "No se ha encontrado el CLI de O2 Cloud. Instálalo con `cargo install o2cloud-cli` o descarga un binario desde GitHub.".into())
+}
+
+/// Which of the CLIs found (path, version, source; in the order they were
+/// looked for) to use. `O2CLOUD_CLI` is an explicit choice and wins if
+/// supported. Then the newest of the app's own: one updated from Settings
+/// once must not hide a newer one bundled with a later version of the app
+/// (0.2.2 kept running a managed 1.2.1 over its bundled 1.4.1), nor the
+/// other way round; on a tie, the managed one. The system's is used only
+/// if the app has none. An older CLI is used only if none meets the
+/// minimum, so the app can still show which version needs updating.
+fn choose_cli(found: &[FoundCli]) -> Option<FoundCli> {
+    let supported = |c: &&FoundCli| version_supported(&c.1);
+    let version = |c: &FoundCli| semver::Version::parse(&c.1).ok();
+    let newest_own = found
+        .iter()
+        .filter(supported)
+        .filter(|c| c.2 == "managed" || c.2 == "bundled")
+        .fold(None, |best: Option<&FoundCli>, c| match best {
+            Some(b) if version(b) >= version(c) => Some(b),
+            _ => Some(c),
+        });
+    found
+        .iter()
+        .find(|c| c.2 == "env" && supported(c))
+        .or(newest_own)
+        .or_else(|| found.iter().find(supported))
+        .or_else(|| found.first())
+        .cloned()
 }
 
 #[derive(Serialize, Clone)]
@@ -777,6 +798,47 @@ fn find_binary(dir: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn uses_the_newest_of_the_apps_own_clis() {
+        let cli = |source: &str, version: &str| {
+            (
+                PathBuf::from(format!("/{source}/{version}/o2cloud")),
+                version.to_string(),
+                source.to_string(),
+            )
+        };
+        let chosen = |found: &[FoundCli]| {
+            choose_cli(found).map(|(_, version, source)| format!("{source} {version}"))
+        };
+        let some = |s: &str| Some(s.to_string());
+
+        // A CLI updated from Settings once doesn't hide a newer bundled one.
+        let found = [cli("managed", "1.2.1"), cli("bundled", "1.4.1")];
+        assert_eq!(chosen(&found), some("bundled 1.4.1"));
+        // Nor the other way round; a tie keeps the managed one.
+        let found = [cli("managed", "1.5.0"), cli("bundled", "1.4.1")];
+        assert_eq!(chosen(&found), some("managed 1.5.0"));
+        let found = [cli("managed", "1.4.1"), cli("bundled", "1.4.1")];
+        assert_eq!(chosen(&found), some("managed 1.4.1"));
+        // O2CLOUD_CLI is an explicit choice, if supported.
+        let found = [cli("env", "1.2.0"), cli("bundled", "1.4.1")];
+        assert_eq!(chosen(&found), some("env 1.2.0"));
+        let found = [cli("env", "0.9.0"), cli("bundled", "1.4.1")];
+        assert_eq!(chosen(&found), some("bundled 1.4.1"));
+        // Unsupported ones (too old, another major) are skipped.
+        let found = [cli("managed", "2.0.0"), cli("bundled", "1.4.1")];
+        assert_eq!(chosen(&found), some("bundled 1.4.1"));
+        // The system's only when the app has none.
+        let found = [cli("bundled", "1.4.1"), cli("system", "1.9.0")];
+        assert_eq!(chosen(&found), some("bundled 1.4.1"));
+        let found = [cli("system", "1.3.0")];
+        assert_eq!(chosen(&found), some("system 1.3.0"));
+        // An old one only if nothing is supported, to say what to update.
+        let found = [cli("managed", "1.1.0"), cli("system", "0.12.0")];
+        assert_eq!(chosen(&found), some("managed 1.1.0"));
+        assert_eq!(chosen(&[]), None);
+    }
 
     #[test]
     fn keeps_the_cli_error_without_its_progress_lines() {

@@ -262,10 +262,14 @@ both manifest types.
 The app resolves the CLI in this order:
 
 1. `O2CLOUD_CLI` environment variable.
-2. Managed update: `~/Library/Application Support/es.dabi.o2cloud/cli/current.json` on macOS, `%APPDATA%\es.dabi.o2cloud\cli\current.json` on Windows.
-3. Bundled binary: `Contents/Resources/bin/<platform>/o2cloud` on macOS, `bin\windows-x86_64\o2cloud.exe` on Windows.
-4. `o2cloud` in `PATH`.
-5. `~/.local/bin` and `~/.cargo/bin`.
+2. The newer of the app's own two (on a tie, the managed one):
+   - managed update: `~/Library/Application Support/es.dabi.o2cloud/cli/current.json` on macOS, `%APPDATA%\es.dabi.o2cloud\cli\current.json` on Windows;
+   - bundled binary: `Contents/Resources/bin/<platform>/o2cloud` on macOS, `bin\windows-x86_64\o2cloud.exe` on Windows.
+
+   Until 0.2.2 a managed CLI always won, so a CLI updated from Settings once
+   kept running over a newer one bundled with a later app.
+3. `o2cloud` in `PATH`.
+4. `~/.local/bin` and `~/.cargo/bin`.
 
 This Windows build does not bundle the CLI. On first run Settings opens and
 **Buscar actualización** downloads the

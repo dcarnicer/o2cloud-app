@@ -4,6 +4,10 @@ built with Tauri 2 and backed by
 
 ## Changes
 
+- **The bundled CLI is used again:** a CLI updated once from Settings no
+  longer hides a newer one bundled with the app; the app runs the newer of
+  the two. 0.2.1 and 0.2.2 kept running the one from Settings, so their CLI
+  fixes didn't reach anyone who had ever updated it there.
 - **o2cloud CLI 1.4.1** bundled on macOS, Windows and Linux; the app requires
   1.2+ within 1.x and only offers CLI updates within that major version.
 - **Wrong extensions:** when O2 rejects a file because its extension doesn't

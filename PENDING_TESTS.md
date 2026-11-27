@@ -437,6 +437,12 @@ los tres como `source: "file"`. En la repetición,
 - [ ] Linux 22.04: comprobar que el instalador de `v0.2.2` (CLI compilado
       desde `v1.4.1`) no pide GLIBC 2.39.
 - [ ] Probar los instaladores de `v0.2.2` en Windows y Linux.
+- [x] Instalada la 0.2.2 en `/Applications`: conecta y lista la raíz, pero
+      ejecutaba la CLI gestionada 1.2.1 (`…/cli/versions/1.2.1/o2cloud`) en
+      vez de la 1.4.1 incluida, porque la gestionada siempre ganaba. Pasaba
+      igual con la 0.2.1. Corregido en 0.2.3: gana la más nueva de las dos.
+- [ ] Windows/Linux: con una CLI gestionada más antigua que la incluida, la
+      app debe usar la incluida (Ajustes muestra «bundled» y su versión).
 
 ## Cómo limpiar después de una prueba
 
