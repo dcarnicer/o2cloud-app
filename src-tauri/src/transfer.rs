@@ -397,7 +397,9 @@ fn upload_result(code: i32, output: &cli::CliOutput) -> Result<UploadOutput, Str
             return Err(cli::SESSION_EXPIRED.into());
         }
         if code != "conflict" {
-            return Err(error["message"].as_str().unwrap_or("error").to_string());
+            return Err(explain_rejection(
+                error["message"].as_str().unwrap_or("error"),
+            ));
         }
     }
     match (code, last("file")) {
@@ -418,8 +420,46 @@ fn upload_result(code: i32, output: &cli::CliOutput) -> Result<UploadOutput, Str
             Err(format!("{CONFLICT_PREFIX}{file}"))
         }
         (0, None) => Err("El CLI no informó del archivo subido.".into()),
-        _ => Err(cli::error_detail(&output.stderr).to_string()),
+        _ => Err(explain_rejection(cli::error_detail(&output.stderr))),
     }
+}
+
+/// An upload error as the row shows it. When O2 rejects a file whose
+/// extension isn't what it is (`MED-1050`, `MED-1000`), CLI 1.4+ adds
+/// "… — it's a HEIC image named .jpg: `o2cloud fix <file> --apply` renames
+/// it to .heic". The app's user has no CLI to run, so the first line (what
+/// the row shows) says it in Spanish with how to fix it by hand; the CLI's
+/// text stays below it, shown on hover.
+fn explain_rejection(message: &str) -> String {
+    match wrong_extension(message) {
+        Some(notice) => format!("{notice}\n{message}"),
+        None => message.to_string(),
+    }
+}
+
+fn wrong_extension(message: &str) -> Option<String> {
+    let (_, reason) = message.split_once(" — it's ")?;
+    let (described, rest) = reason.split_once(" named .")?;
+    let (named, rest) = rest.split_once(": ")?;
+    let (_, right) = rest.rsplit_once(" renames it to .")?;
+    let described = described
+        .strip_prefix("an ")
+        .or_else(|| described.strip_prefix("a "))?;
+    let kind = [
+        ("image", "una imagen"),
+        ("video", "un vídeo"),
+        ("audio file", "un audio"),
+        ("document", "un documento"),
+    ]
+    .iter()
+    .find_map(|(what, es)| {
+        let name = described.strip_suffix(what)?.trim_end();
+        (!name.is_empty()).then(|| format!("{es} {name}"))
+    })?;
+    Some(format!(
+        "O2 no lo acepta: es {kind}, aunque su nombre acabe en .{named}. \
+         Cambia la extensión del archivo a .{right} y vuelve a subirlo."
+    ))
 }
 
 /// How an upload error that is a conflict starts: the CLI's `file` event
@@ -2443,6 +2483,57 @@ mod tests {
         // No events at all (a crash): stderr's error.
         let err = upload_result(1, &output("", "→ Uploading a\nError: boom")).unwrap_err();
         assert_eq!(err, "boom");
+    }
+
+    #[test]
+    fn explains_a_wrong_extension_in_spanish() {
+        // CLI 1.4+: a HEIC photo named .jpg, rejected by O2.
+        let cli = "API error: Upload rejected: MED-1050: Invalid media — it's a HEIC image \
+                   named .jpg: `o2cloud fix <file> --apply` renames it to .heic";
+        let event = serde_json::json!({
+            "event": "error", "code": "api", "message": cli, "exit_code": 1
+        });
+        let err = upload_result(1, &output(&event.to_string(), "")).unwrap_err();
+        let (first, rest) = err.split_once('\n').expect("two lines");
+        assert_eq!(
+            first,
+            "O2 no lo acepta: es una imagen HEIC, aunque su nombre acabe en .jpg. \
+             Cambia la extensión del archivo a .heic y vuelve a subirlo."
+        );
+        // The CLI's words stay, on hover.
+        assert_eq!(rest, cli);
+        // Also from stderr, when there are no events.
+        let err = upload_result(1, &output("", &format!("Error: {cli}"))).unwrap_err();
+        assert!(
+            err.starts_with("O2 no lo acepta: es una imagen HEIC"),
+            "{err}"
+        );
+
+        // Videos, audio and an "an".
+        let first_line = |m: &str| explain_rejection(m).lines().next().unwrap().to_string();
+        assert!(
+            first_line(
+                "API error: Upload rejected: MED-1000: x — it's a QuickTime (MOV) video named .mp4: \
+                 `o2cloud fix <file> --apply` renames it to .mov"
+            )
+            .starts_with("O2 no lo acepta: es un vídeo QuickTime (MOV), aunque su nombre acabe en .mp4.")
+        );
+        assert!(
+            first_line(
+                "API error: Upload rejected: MED-1050: x — it's an M4A audio file named .mp3: \
+                 `o2cloud fix <file> --apply` renames it to .m4a"
+            )
+            .starts_with("O2 no lo acepta: es un audio M4A, aunque su nombre acabe en .mp3.")
+        );
+
+        // Anything else is left as it is.
+        for other in [
+            "API error: Upload rejected: MED-1020: File size exceeds configured max file size limit",
+            "API error: Upload rejected: MED-1000: x — its colour profile is damaged, which O2 Cloud can't read",
+            "HTTP request failed: timed out [run 1]",
+        ] {
+            assert_eq!(explain_rejection(other), other);
+        }
     }
 
     #[test]

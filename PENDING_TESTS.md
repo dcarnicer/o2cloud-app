@@ -257,14 +257,14 @@ los tres como `source: "file"`. En la repetición,
       0.11/0.12); el CLI crea `name.NNN`, la app publica `name.o2split.json`,
       la descarga une y verifica el SHA-256, y el borrado elimina partes +
       manifiesto.
-- [ ] Archivo subido con el CLI 1.3.1 en partes `name.001`: comprobar la
+- [ ] Archivo subido con el CLI 1.4.1 en partes `name.001`: comprobar la
       agrupación en la app (Fase 1) y la descarga unida.
-- [ ] Flujo de actualización en Windows de 0.8.0/0.9.0 a 1.3.1, con sesión
+- [ ] Flujo de actualización en Windows de 0.8.0/0.9.0 a 1.4.1, con sesión
       activa y sin ella.
 - [ ] Linux/WSL2: comprobar que el asset 0.13.3+ pide GLIBC 2.39 y que el build
-      desde fuente con `v1.3.1` funciona en 22.04.
+      desde fuente con `v1.4.1` funciona en 22.04.
 - [x] Subir `MIN_VERSION` a **1.2.0** (PR #2). La app solo ofrece
-      actualizaciones dentro de 1.x; las releases incluyen 1.3.1.
+      actualizaciones dentro de 1.x; las releases incluyen 1.4.1.
 
 ### 10. Soporte de splits del CLI — Fase 1 hecha, Fase 2 híbrida en prueba
 
@@ -380,7 +380,7 @@ los tres como `source: "file"`. En la repetición,
 - [x] `live_cli` con 1.2.1: todo pasó salvo sobrescribir un archivo subido
       segundos antes (O2 devolvía `MED-1017` al borrar la copia antigua y
       quedaban las dos; [o2cloud-cli#55](https://github.com/danielperez9430/o2cloud-cli/issues/55)).
-      CLI 1.2.2 lo corrige; re-ejecutar con 1.3.1 (sección 16).
+      CLI 1.2.2 lo corrige; re-ejecutar con 1.4.1 (secciones 16 y 17).
 - [x] Release **v0.2.0** publicada el 26 nov 2026: macOS universal
       `.dmg`/`.app.tar.gz`, Windows `.msi`/`.exe`, Linux `.deb`/`.AppImage`
       y `SHA256SUMS.txt`; las 6 sumas verificadas. El job de checksums falló
@@ -410,6 +410,25 @@ los tres como `source: "file"`. En la repetición,
       dos arquitecturas. La descarga pública del `.exe` y de `SHA256SUMS.txt`
       también coincide.
 - [ ] Probar los instaladores de `v0.2.1` en Windows y Linux.
+
+### 17. CLI 1.4.0–1.4.1 — pendiente (27 nov 2026)
+
+- [x] Revisado: la GUI no usa `fix`/`fix-jpeg`, `upload-dir` ni `upload-zip`;
+      los eventos JSON, los errores, los exit codes y los flags de `upload`,
+      `ls`, `download`, `mkdir` y `rm` no cambian. Los assets de la release
+      se llaman igual, así que Ajustes puede ofrecer e instalar 1.4.1.
+- [x] Binario local `src-tauri/bin/macos-aarch64/o2cloud` actualizado a 1.4.1
+      (seguía en 1.2.1 aunque las releases llevaban 1.3.1).
+- [ ] Subir una foto HEIC renombrada a `.jpg`: O2 la rechaza (`MED-1050`) y
+      la fila debe decir «O2 no lo acepta: es una imagen HEIC, aunque su
+      nombre acabe en .jpg…», con el texto del CLI al pasar el ratón.
+- [ ] Descargar un archivo troceado (`name.001`…) nada más subirlo, antes de
+      que O2 lo liste (10–60 s): la descarga por ruta debe encontrarlo en vez
+      de fallar con «Not found».
+- [ ] `live_cli` con 1.4.1 (incluye el caso de sobrescritura de la
+      sección 16).
+- [ ] La próxima release incluye `o2cloud` 1.4.1 en macOS, Windows y Linux, y
+      el build de Linux desde `v1.4.1` no pide GLIBC 2.39.
 
 ## Cómo limpiar después de una prueba
 

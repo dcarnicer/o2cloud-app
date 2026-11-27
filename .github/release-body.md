@@ -4,16 +4,18 @@ built with Tauri 2 and backed by
 
 ## Changes
 
-- **o2cloud CLI 1.3.1** bundled on macOS, Windows and Linux; the app requires
+- **o2cloud CLI 1.4.1** bundled on macOS, Windows and Linux; the app requires
   1.2+ within 1.x and only offers CLI updates within that major version.
-- **Overwriting recent uploads:** replacing a file uploaded seconds earlier now
-  waits for O2 to validate it (`MED-1017`) instead of failing and leaving both
-  copies. The transfer row says what it is waiting for, and the upload watchdog
-  no longer mistakes that wait for a stalled transfer.
+- **Wrong extensions:** when O2 rejects a file because its extension doesn't
+  match what it is (an iPhone HEIC photo renamed `.jpg`, `MED-1050`), the
+  transfer row says what the file really is and which extension to give it.
+- **Split files just uploaded** can be downloaded right away: CLI 1.4.1 finds
+  them by path before O2 lists them.
 - **Linux:** the bundled CLI is still built from source on Ubuntu 22.04, so the
   installers keep working there; the official Linux asset needs GLIBC 2.39.
-- Includes everything from 0.2.0: Recuerdos (Momentos, Lugares, Personas),
-  Pase, Biblioteca (Música and Documentos), upload conflicts, `--json-lines`
+- Includes everything from 0.2.1 (overwriting a recent upload waits for O2,
+  `MED-1017`) and 0.2.0: Recuerdos (Momentos, Lugares, Personas), Pase,
+  Biblioteca (Música and Documentos), upload conflicts, `--json-lines`
   progress and SHA-256, and the accessibility pass.
 
 ## Downloads
@@ -23,7 +25,7 @@ built with Tauri 2 and backed by
 - **Windows** — x64 `.msi` or NSIS `.exe` installer.
 - **Linux** — x64 `.AppImage` or `.deb` package.
 
-The [`o2cloud`](https://github.com/danielperez9430/o2cloud-cli) 1.3.1 CLI is
+The [`o2cloud`](https://github.com/danielperez9430/o2cloud-cli) 1.4.1 CLI is
 included with every installer, so the app works without a separate CLI install.
 The app still accepts a newer CLI from Settings or `O2CLOUD_CLI`.
 
