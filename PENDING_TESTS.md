@@ -580,8 +580,12 @@ los tres como `source: "file"`. En la repetición,
 - [x] Empaquetada: hashes de macOS, Windows y Linux iguales a los de GitHub,
       commit de Linux `69198f5`, binario local `o2cloud 1.4.3`.
 - [x] `live_download_dir` con 1.4.3 contra la cuenta: pasa, sin restos.
-- [ ] Release que la incluya (0.2.8): de paso, comprobar que el permiso de
-      Fotos concedido en la 0.2.7 sigue tras actualizar.
+- [x] Release **v0.2.8** publicada el 28 nov 2026 con la 1.4.3: jobs en
+      verde, 13 assets OK, `latest.json` con la 0.2.8, 5 firmas válidas;
+      `.dmg` universal con la 1.4.3 en las dos arquitecturas y el **mismo
+      requisito de firma** que la 0.2.7 instalada.
+- [ ] Actualizar de la 0.2.7 a la 0.2.8 desde la app y abrir Fotos: debe
+      cargar sin volver a pedir permiso.
 
 ## Cómo limpiar después de una prueba
 
