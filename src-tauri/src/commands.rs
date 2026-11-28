@@ -2574,6 +2574,55 @@ pub async fn download_entry(
     result
 }
 
+/// The thumbnail and preview of one file, from `o2cloud thumbnails`.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct FileThumbnail {
+    pub id: u64,
+    /// O2's kind: "picture", "video", "file"…
+    #[serde(default, rename = "type")]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub thumbnail: Option<String>,
+    #[serde(default)]
+    pub preview: Option<String>,
+}
+
+/// How many files one `thumbnails` call asks for: the rows on screen.
+const THUMBNAILS_PER_CALL: usize = 200;
+
+/// Signed links to the thumbnails and previews of the files `ids` (photos,
+/// videos and PDFs have them). Files without one come with `null`; files
+/// O2 doesn't return (still processing, gone) are left out.
+#[tauri::command]
+pub async fn file_thumbnails(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    ids: Vec<u64>,
+) -> Result<Vec<FileThumbnail>, String> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let cli_path = state.cli.path_or_err()?;
+    let mut args = vec!["thumbnails".to_string()];
+    args.extend(ids.iter().take(THUMBNAILS_PER_CALL).map(u64::to_string));
+    args.push("--json".into());
+    let thumbnails: Vec<FileThumbnail> = cli::run_json(&app, &cli_path, &args).await?;
+    Ok(only_o2_links(thumbnails))
+}
+
+/// Only O2's own HTTPS links reach the page, as for the slideshow.
+fn only_o2_links(thumbnails: Vec<FileThumbnail>) -> Vec<FileThumbnail> {
+    let o2 = |url: Option<String>| url.filter(|u| u.starts_with("https://cloud.o2online.es/"));
+    thumbnails
+        .into_iter()
+        .map(|t| FileThumbnail {
+            thumbnail: o2(t.thumbnail),
+            preview: o2(t.preview),
+            ..t
+        })
+        .collect()
+}
+
 /// Download the folder `id` (named `name`) with everything in it into the
 /// local folder `dest`, where it lands as a folder of its name.
 #[tauri::command]
@@ -2926,6 +2975,113 @@ mod tests {
             println!("  {name}: whole {found:?}");
             assert_eq!(found.len(), 1, "{name} isn't indexed whole");
         }
+    }
+
+    /// `o2cloud thumbnails` against the account, through the app's types:
+    /// photos, videos and PDFs from `ls -a`, read as the app reads them.
+    /// Run with `O2CLOUD_LIVE_CLI=<o2cloud 1.5+> cargo test live_thumbnails
+    /// -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn live_thumbnails() {
+        let cli = std::env::var("O2CLOUD_LIVE_CLI").expect("O2CLOUD_LIVE_CLI");
+        let run = |args: &[String]| {
+            let out = std::process::Command::new(&cli)
+                .args(args)
+                .stdin(std::process::Stdio::null())
+                .output()
+                .unwrap();
+            assert!(
+                out.status.success(),
+                "{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            out.stdout
+        };
+        let files: Vec<RemoteFile> =
+            serde_json::from_slice(&run(&["ls".into(), "-a".into(), "--json".into()])).unwrap();
+        let pick = |ext: &[&str]| -> Vec<u64> {
+            files
+                .iter()
+                .filter(|f| ext.iter().any(|e| f.name.to_lowercase().ends_with(e)))
+                .take(5)
+                .map(|f| f.id)
+                .collect()
+        };
+        let (photos, videos, pdfs) = (
+            pick(&[".jpg", ".jpeg", ".heic"]),
+            pick(&[".mp4", ".mov"]),
+            pick(&[".pdf"]),
+        );
+        let mut args = vec!["thumbnails".to_string()];
+        args.extend(
+            photos
+                .iter()
+                .chain(&videos)
+                .chain(&pdfs)
+                .map(u64::to_string),
+        );
+        args.push("--json".into());
+        let started = std::time::Instant::now();
+        let got = only_o2_links(serde_json::from_slice(&run(&args)).unwrap());
+        println!(
+            "asked {} ({} photos, {} videos, {} PDFs), got {} in {:?}",
+            args.len() - 2,
+            photos.len(),
+            videos.len(),
+            pdfs.len(),
+            got.len(),
+            started.elapsed()
+        );
+        for t in &got {
+            println!(
+                "  {} {:?} thumbnail={} preview={}",
+                t.id,
+                t.kind,
+                t.thumbnail.is_some(),
+                t.preview.is_some()
+            );
+        }
+        let with = |ids: &[u64]| {
+            got.iter()
+                .filter(|t| ids.contains(&t.id) && t.thumbnail.is_some())
+                .count()
+        };
+        assert!(with(&photos) > 0, "no photo came with a thumbnail");
+        if !videos.is_empty() {
+            assert!(with(&videos) > 0, "no video came with a thumbnail");
+        }
+    }
+
+    #[test]
+    fn reads_thumbnails_and_keeps_only_o2_links() {
+        let raw = r#"[
+            {"id":1,"type":"picture","thumbnail":"https://cloud.o2online.es/sapi/download/picture?k=s","preview":"https://cloud.o2online.es/sapi/download/picture?k=b"},
+            {"id":2,"type":"file","thumbnail":null,"preview":null},
+            {"id":3,"type":"video","thumbnail":"https://evil.example/t","preview":"http://cloud.o2online.es/p"}
+        ]"#;
+        let thumbnails = only_o2_links(serde_json::from_str(raw).unwrap());
+        assert_eq!(thumbnails.len(), 3);
+        assert_eq!(thumbnails[0].kind.as_deref(), Some("picture"));
+        assert!(thumbnails[0].thumbnail.as_deref().unwrap().ends_with("k=s"));
+        assert_eq!(
+            (
+                thumbnails[1].thumbnail.as_ref(),
+                thumbnails[1].preview.as_ref()
+            ),
+            (None, None)
+        );
+        // Not O2's, or not HTTPS: dropped.
+        assert_eq!(
+            (
+                thumbnails[2].thumbnail.as_ref(),
+                thumbnails[2].preview.as_ref()
+            ),
+            (None, None)
+        );
+        // What the page gets keeps O2's field name.
+        let json = serde_json::to_value(&thumbnails[0]).unwrap();
+        assert_eq!(json["type"], "picture");
     }
 
     #[test]

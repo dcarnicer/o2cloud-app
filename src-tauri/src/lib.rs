@@ -71,6 +71,7 @@ pub fn run() {
             commands::library_check_paths,
             commands::download_entry,
             commands::download_folder,
+            commands::file_thumbnails,
             commands::delete_entries,
             commands::get_quota,
             commands::check_cli_update,

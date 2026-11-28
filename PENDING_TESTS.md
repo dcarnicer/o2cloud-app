@@ -604,6 +604,20 @@ los tres como `source: "file"`. En la repetición,
 - [x] En la 0.2.9 (actualizada desde la app), Fotos marca `IMG_0112.MOV` como
       ya en O2. Resuelto.
 
+### 24. Vistas previas y CLI 1.5.0 — 0.3.0 (28 nov 2026)
+
+- [x] CLI 1.5.0 empaquetada (subagente; hashes y commit `18430db` comprobados
+      contra GitHub). Versión mínima de la app: 1.5.0.
+- [x] `live_thumbnails`: 5 fotos, 5 vídeos y 5 PDF reales, 15 de 15 con
+      miniatura y vista previa en ~0,5 s. Las URLs abren como JPEG con un
+      `User-Agent` de navegador (16 KB / 129 KB una foto, 5 KB / 20 KB un PDF)
+      y dan 403 sin él, como avisó Daniel; un `<img>` siempre lo envía.
+- [x] Los 5 tests en vivo pasan con la 1.5.0 (labels, thumbnails, archivos en
+      partes, descarga de carpetas, subidas); sin restos en la cuenta.
+- [ ] En la app: miniaturas en Ubicaciones, Cámara, Momentos y Documentos al
+      desplazarse; Espacio / doble clic / Intro abren el visor; ← → pasan;
+      «Descargar» desde el visor; un vídeo y un PDF muestran su nota.
+
 ## Cómo limpiar después de una prueba
 
 - Borrar el archivo o la carpeta de prueba de O2.

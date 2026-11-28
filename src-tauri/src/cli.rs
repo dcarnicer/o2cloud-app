@@ -15,10 +15,11 @@ const RELEASES_API: &str =
     "https://api.github.com/repos/danielperez9430/o2cloud-cli/releases/latest";
 const USER_AGENT: &str = "o2cloud-desktop/0.1";
 
-/// The oldest CLI the app supports. 1.2.0 is required for Momentos,
-/// Lugares, Música, Documentos and the slideshow (`labels` with covers,
-/// locations and thumbnails, `media`, signed URLs), and lists a file as
-/// soon as it's uploaded. 1.0.0 brought `--json-lines`
+/// The oldest CLI the app supports. 1.5.0 is required for the previews in
+/// folder views (`thumbnails <id>...`) and Música's albums (song tags in
+/// `media music`). 1.2.0 brought Momentos, Lugares, Música, Documentos and
+/// the slideshow (`labels` with covers, locations and thumbnails, `media`,
+/// signed URLs), and lists a file as soon as it's uploaded. 1.0.0 brought `--json-lines`
 /// (upload progress and SHA-256 from the CLI itself), `--on-conflict`
 /// (a file of another size is asked about, not uploaded as `name (1)`), and
 /// its exit codes and JSON errors. It also has everything earlier versions
@@ -26,7 +27,7 @@ const USER_AGENT: &str = "o2cloud-desktop/0.1";
 /// fast path (0.10), and the download-integrity, SAPI, fresh-ID and native
 /// split fixes (0.9). Older versions are detected but not used; Settings
 /// offers the update.
-pub const MIN_VERSION: &str = "1.2.0";
+pub const MIN_VERSION: &str = "1.5.0";
 
 /// The CLI's major version the app is written for. A new major version can
 /// change behaviour the app relies on, so Settings doesn't offer it until the
@@ -849,29 +850,29 @@ mod tests {
         let some = |s: &str| Some(s.to_string());
 
         // A CLI updated from Settings once doesn't hide a newer bundled one.
-        let found = [cli("managed", "1.2.1"), cli("bundled", "1.4.1")];
-        assert_eq!(chosen(&found), some("bundled 1.4.1"));
+        let found = [cli("managed", "1.5.1"), cli("bundled", "1.5.4")];
+        assert_eq!(chosen(&found), some("bundled 1.5.4"));
         // Nor the other way round; a tie keeps the managed one.
-        let found = [cli("managed", "1.5.0"), cli("bundled", "1.4.1")];
-        assert_eq!(chosen(&found), some("managed 1.5.0"));
-        let found = [cli("managed", "1.4.1"), cli("bundled", "1.4.1")];
-        assert_eq!(chosen(&found), some("managed 1.4.1"));
+        let found = [cli("managed", "1.6.0"), cli("bundled", "1.5.4")];
+        assert_eq!(chosen(&found), some("managed 1.6.0"));
+        let found = [cli("managed", "1.5.4"), cli("bundled", "1.5.4")];
+        assert_eq!(chosen(&found), some("managed 1.5.4"));
         // O2CLOUD_CLI is an explicit choice, if supported.
-        let found = [cli("env", "1.2.0"), cli("bundled", "1.4.1")];
-        assert_eq!(chosen(&found), some("env 1.2.0"));
-        let found = [cli("env", "0.9.0"), cli("bundled", "1.4.1")];
-        assert_eq!(chosen(&found), some("bundled 1.4.1"));
+        let found = [cli("env", "1.5.0"), cli("bundled", "1.5.4")];
+        assert_eq!(chosen(&found), some("env 1.5.0"));
+        let found = [cli("env", "0.9.0"), cli("bundled", "1.5.4")];
+        assert_eq!(chosen(&found), some("bundled 1.5.4"));
         // Unsupported ones (too old, another major) are skipped.
-        let found = [cli("managed", "2.0.0"), cli("bundled", "1.4.1")];
-        assert_eq!(chosen(&found), some("bundled 1.4.1"));
+        let found = [cli("managed", "2.0.0"), cli("bundled", "1.5.4")];
+        assert_eq!(chosen(&found), some("bundled 1.5.4"));
         // The system's only when the app has none.
-        let found = [cli("bundled", "1.4.1"), cli("system", "1.9.0")];
-        assert_eq!(chosen(&found), some("bundled 1.4.1"));
-        let found = [cli("system", "1.3.0")];
-        assert_eq!(chosen(&found), some("system 1.3.0"));
+        let found = [cli("bundled", "1.5.4"), cli("system", "1.9.0")];
+        assert_eq!(chosen(&found), some("bundled 1.5.4"));
+        let found = [cli("system", "1.5.2")];
+        assert_eq!(chosen(&found), some("system 1.5.2"));
         // An old one only if nothing is supported, to say what to update.
-        let found = [cli("managed", "1.1.0"), cli("system", "0.12.0")];
-        assert_eq!(chosen(&found), some("managed 1.1.0"));
+        let found = [cli("managed", "1.4.3"), cli("system", "0.12.0")];
+        assert_eq!(chosen(&found), some("managed 1.4.3"));
         assert_eq!(chosen(&[]), None);
     }
 
@@ -909,10 +910,11 @@ mod tests {
         assert!(!version_supported("0.12.0"));
         assert!(!version_supported("0.15.4"));
         assert!(!version_supported("not-a-version"));
-        // Labels, media and their URLs came in 1.2.
+        // Thumbnails by ID and song tags came in 1.5.
         assert!(!version_supported("1.1.0"));
-        assert!(version_supported("1.2.0"));
-        assert!(version_supported("1.4.2"));
+        assert!(!version_supported("1.4.3"));
+        assert!(version_supported("1.5.0"));
+        assert!(version_supported("1.6.2"));
         // A new major version may change what the app relies on.
         assert!(!version_supported("2.0.0"));
     }

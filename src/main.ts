@@ -939,6 +939,8 @@ function svgIcon(name: keyof typeof ICON_PATHS): SVGSVGElement {
 
 const VIDEO_NAME = /\.(mov|mp4|m4v|3gp|3g2|avi|mkv|webm|mts|m2ts|mpe?g|wmv|flv)$/i;
 const AUDIO_NAME = /\.(mp3|m4a|flac|wav|aac|ogg|opus|aiff?)$/i;
+const IMAGE_NAME = /\.(jpe?g|png|heic|heif|gif|webp|tiff?|bmp|dng|raw|cr[23]|nef|arw|avif)$/i;
+const PDF_NAME = /\.pdf$/i;
 
 /** A song the player may stream (whole, not in parts). */
 function isAudio(file: LogicalFile): boolean {
@@ -951,7 +953,7 @@ function lastSegment(path: string): string {
 }
 
 const FILE_ICONS: [RegExp, string][] = [
-  [/\.(jpe?g|png|heic|heif|gif|webp|tiff?|bmp|dng|raw|cr[23]|nef|arw|avif)$/i, "🖼️"],
+  [IMAGE_NAME, "🖼️"],
   [VIDEO_NAME, "🎬"],
   [AUDIO_NAME, "🎵"],
   [/\.(zip|rar|7z|tar|gz|tgz|bz2|xz|dmg|iso)$/i, "🗜️"],
@@ -1026,6 +1028,7 @@ function renderRow(entry: Entry): HTMLTableRowElement {
   const icon = document.createElement("span");
   icon.className = "row-icon";
   icon.textContent = entryIcon(entry);
+  if (entry.kind === "file" && previewable(entry.file)) watchRowThumbnail(tr, icon, entry.file);
   const name = document.createElement("span");
   name.className = "name-text";
   name.textContent = entry.name;
@@ -1165,6 +1168,8 @@ function renderListing() {
   const tbody = $("#file-list");
   tbody.replaceChildren();
   rowByKey.clear();
+  // The rows go: so do their pending thumbnails.
+  rowThumbnailObserver?.disconnect();
 
   $("#loading-state").classList.toggle("hidden", !(state.loading && !listing));
   $("#refresh-line").classList.toggle("hidden", !(state.loading && listing));
@@ -1213,6 +1218,269 @@ function emptyTexts(view: string): [string, string] {
         ? ["No hay fotos aquí.", "O2 puede haberlas quitado de este grupo."]
         : ["Esta carpeta está vacía.", "Arrastra archivos aquí o usa «Subir»."];
   }
+}
+
+// ---------- Previews: thumbnails in the rows, and a viewer ----------
+
+/** What `o2cloud thumbnails` says of a file: signed links to a thumbnail
+ * (about 320 px) and a preview (up to 1440 px), or null. */
+interface FileThumbnail {
+  id: number;
+  type: string | null;
+  thumbnail: string | null;
+  preview: string | null;
+}
+
+/** Thumbnails asked for, by file ID (null: O2 has none). The links are
+ * signed: kept for the session, asked again when one stops opening. */
+const thumbnails = new Map<number, FileThumbnail | null>();
+const thumbnailWaiters = new Map<number, ((thumbnail: FileThumbnail | null) => void)[]>();
+let thumbnailQueue: number[] = [];
+let thumbnailTimer = 0;
+let rowThumbnailObserver: IntersectionObserver | null = null;
+
+/** Whether O2 may have a picture of `file`: photos, videos and PDFs, whole. */
+function previewable(file: LogicalFile): boolean {
+  return (
+    !file.chunked &&
+    file.normal_id !== null &&
+    (IMAGE_NAME.test(file.name) || VIDEO_NAME.test(file.name) || PDF_NAME.test(file.name))
+  );
+}
+
+/** The thumbnail and preview of file `id`, asked for together with the
+ * other rows that come into view at the same moment. */
+function fileThumbnail(id: number): Promise<FileThumbnail | null> {
+  if (thumbnails.has(id)) return Promise.resolve(thumbnails.get(id) ?? null);
+  return new Promise((resolve) => {
+    const waiting = thumbnailWaiters.get(id);
+    if (waiting) {
+      waiting.push(resolve);
+      return;
+    }
+    thumbnailWaiters.set(id, [resolve]);
+    thumbnailQueue.push(id);
+    if (!thumbnailTimer) thumbnailTimer = window.setTimeout(() => void askThumbnails(), 80);
+  });
+}
+
+async function askThumbnails() {
+  thumbnailTimer = 0;
+  const ids = thumbnailQueue.splice(0, 100);
+  if (thumbnailQueue.length) thumbnailTimer = window.setTimeout(() => void askThumbnails(), 0);
+  let found: FileThumbnail[] | null = null;
+  try {
+    found = await invoke<FileThumbnail[]>("file_thumbnails", { ids });
+  } catch {
+    // Offline or the session ended: the icons stay, and they're asked
+    // for again when the rows are drawn again.
+  }
+  const byId = new Map((found ?? []).map((thumbnail) => [thumbnail.id, thumbnail]));
+  for (const id of ids) {
+    const thumbnail = byId.get(id) ?? null;
+    // Left out by O2 (still processing a fresh upload): not remembered.
+    if (byId.has(id)) thumbnails.set(id, thumbnail);
+    const waiting = thumbnailWaiters.get(id) ?? [];
+    thumbnailWaiters.delete(id);
+    for (const resolve of waiting) resolve(thumbnail);
+  }
+}
+
+/** Put the file's thumbnail in place of its icon once the row is in view. */
+function watchRowThumbnail(row: HTMLTableRowElement, icon: HTMLElement, file: LogicalFile) {
+  const id = file.normal_id!;
+  if (thumbnails.has(id)) {
+    showRowThumbnail(icon, thumbnails.get(id) ?? null, id);
+    return;
+  }
+  rowThumbnailObserver ??= new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const target = entry.target as HTMLElement;
+        rowThumbnailObserver?.unobserve(target);
+        const rowIcon = target.querySelector<HTMLElement>(".row-icon");
+        const rowId = Number(target.dataset.thumbnailId);
+        if (rowIcon) void fileThumbnail(rowId).then((t) => showRowThumbnail(rowIcon, t, rowId));
+      }
+    },
+    { root: $("#table-wrap"), rootMargin: "300px 0px" },
+  );
+  row.dataset.thumbnailId = String(id);
+  rowThumbnailObserver.observe(row);
+}
+
+function showRowThumbnail(icon: HTMLElement, thumbnail: FileThumbnail | null, id: number) {
+  if (!thumbnail?.thumbnail || !icon.isConnected) return;
+  const image = new Image();
+  image.className = "row-thumb";
+  image.alt = "";
+  image.decoding = "async";
+  image.onload = () => {
+    if (!icon.isConnected) return;
+    icon.replaceChildren(image);
+    icon.classList.add("has-thumb");
+  };
+  // An expired link: asked for again the next time the row is drawn.
+  image.onerror = () => thumbnails.delete(id);
+  image.src = thumbnail.thumbnail;
+}
+
+const viewer = {
+  files: [] as LogicalFile[],
+  index: 0,
+  opener: null as HTMLElement | null,
+  /** Bumped on every change: a late answer for another file is ignored. */
+  generation: 0,
+  retried: false,
+};
+
+function viewerOpen(): boolean {
+  return !$("#viewer").classList.contains("hidden");
+}
+
+/** Open the viewer on `file`, going through the photos, videos and PDFs of
+ * the list as it is on screen. */
+function openViewer(file: LogicalFile) {
+  viewer.files = visibleEntries().flatMap((entry) =>
+    entry.kind === "file" && previewable(entry.file) ? [entry.file] : [],
+  );
+  viewer.index = viewer.files.findIndex((f) => f.normal_id === file.normal_id);
+  if (viewer.index < 0) {
+    viewer.files = [file];
+    viewer.index = 0;
+  }
+  viewer.opener = document.activeElement as HTMLElement | null;
+  hideMenu();
+  $("#viewer").classList.remove("hidden");
+  ($("#viewer-close") as HTMLElement).focus();
+  void showViewerFile();
+}
+
+function closeViewer() {
+  viewer.generation++;
+  $("#viewer").classList.add("hidden");
+  ($("#viewer-image") as HTMLImageElement).removeAttribute("src");
+  const opener = viewer.opener;
+  if (opener && document.contains(opener)) opener.focus();
+}
+
+async function showViewerFile() {
+  const generation = ++viewer.generation;
+  const file = viewer.files[viewer.index];
+  const id = file.normal_id!;
+  const image = $("#viewer-image") as HTMLImageElement;
+  const empty = $("#viewer-empty");
+  $("#viewer-title").textContent = file.name;
+  $("#viewer-count").textContent =
+    viewer.files.length > 1 ? `${viewer.index + 1} de ${viewer.files.length}` : "";
+  $("#viewer-note").textContent = VIDEO_NAME.test(file.name)
+    ? "Es un vídeo: aquí se ve un fotograma. Descárgalo para verlo entero."
+    : PDF_NAME.test(file.name)
+      ? "La primera página del PDF. Descárgalo para leerlo entero."
+      : "";
+  for (const button of ["#viewer-prev", "#viewer-next"]) {
+    $(button).classList.toggle("hidden", viewer.files.length < 2);
+  }
+  image.classList.add("hidden");
+  empty.textContent = "Cargando la vista previa…";
+  empty.classList.remove("hidden");
+  viewer.retried = false;
+
+  const thumbnail = await fileThumbnail(id);
+  if (generation !== viewer.generation) return;
+  const url = thumbnail?.preview ?? thumbnail?.thumbnail;
+  if (!url) {
+    empty.textContent = "O2 no tiene vista previa de este archivo (o aún lo está procesando).";
+    return;
+  }
+  image.onload = () => {
+    if (generation !== viewer.generation) return;
+    empty.classList.add("hidden");
+    image.classList.remove("hidden");
+  };
+  image.onerror = () => {
+    if (generation !== viewer.generation) return;
+    // The link may have expired: ask for a new one, once.
+    thumbnails.delete(id);
+    if (!viewer.retried) {
+      viewer.retried = true;
+      void fileThumbnail(id).then((fresh) => {
+        const again = fresh?.preview ?? fresh?.thumbnail;
+        if (generation === viewer.generation && again && again !== url) image.src = again;
+        else if (generation === viewer.generation) empty.textContent = "No se ha podido cargar la vista previa.";
+      });
+    } else {
+      empty.textContent = "No se ha podido cargar la vista previa.";
+    }
+  };
+  image.alt = file.name;
+  image.src = url;
+  // The neighbours' links, so the next one opens at once.
+  for (const step of [1, -1]) {
+    const next = viewer.files[viewer.index + step];
+    if (next?.normal_id != null) void fileThumbnail(next.normal_id);
+  }
+}
+
+function viewerStep(step: number) {
+  if (viewer.files.length < 2) return;
+  viewer.index = (viewer.index + step + viewer.files.length) % viewer.files.length;
+  void showViewerFile();
+}
+
+/** Keys while the viewer is open. */
+function viewerKey(event: KeyboardEvent) {
+  switch (event.key) {
+    case "Escape":
+    case " ":
+      event.preventDefault();
+      closeViewer();
+      return;
+    case "ArrowRight":
+      event.preventDefault();
+      viewerStep(1);
+      return;
+    case "ArrowLeft":
+      event.preventDefault();
+      viewerStep(-1);
+      return;
+    case "Tab": {
+      // Focus stays in the viewer.
+      const buttons = [...document.querySelectorAll<HTMLElement>("#viewer button")].filter(
+        (button) => !button.classList.contains("hidden"),
+      );
+      const at = buttons.indexOf(document.activeElement as HTMLElement);
+      const next = event.shiftKey
+        ? at <= 0
+          ? buttons.length - 1
+          : at - 1
+        : (at + 1) % buttons.length;
+      buttons[next]?.focus();
+      event.preventDefault();
+      return;
+    }
+    case "Enter":
+      // A focused button presses itself.
+      return;
+    default:
+      if (!event.metaKey && !event.ctrlKey) event.preventDefault();
+  }
+}
+
+function bindViewer() {
+  $("#viewer-close").addEventListener("click", closeViewer);
+  $("#viewer-prev").addEventListener("click", () => viewerStep(-1));
+  $("#viewer-next").addEventListener("click", () => viewerStep(1));
+  $("#viewer-download").addEventListener("click", () => {
+    const file = viewer.files[viewer.index];
+    closeViewer();
+    if (file) void downloadFiles([file]);
+  });
+  // A click on the dark area around the picture closes it.
+  $("#viewer-stage").addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) closeViewer();
+  });
 }
 
 // ---------- Moments, places and their slideshow ----------
@@ -1890,6 +2158,7 @@ function bindPlayer() {
 
 function bindLabelViews() {
   bindPlayer();
+  bindViewer();
   $("#slideshow-btn").addEventListener("click", () => void openSlideshow());
   for (const button of document.querySelectorAll<HTMLButtonElement>("#view-toggle button")) {
     button.addEventListener("click", () => setPlacesView(button.dataset.view === "map" ? "map" : "list"));
@@ -2008,6 +2277,7 @@ function openEntry(entry: Entry) {
   if (entry.kind === "virtual") openVirtualFolder(entry.folder);
   else if (entry.kind === "folder") openFolder(entry.folder);
   else if (inMusic() || isAudio(entry.file)) void playFile(entry.file);
+  else if (previewable(entry.file)) openViewer(entry.file);
   else void downloadFiles([entry.file]);
 }
 
@@ -2020,6 +2290,10 @@ function openSelection() {
   }
   if (entries.length === 1 && entries[0].kind === "folder") {
     openEntry(entries[0]);
+    return;
+  }
+  if (entries.length === 1 && entries[0].kind === "file" && previewable(entries[0].file)) {
+    openViewer(entries[0].file);
     return;
   }
   downloadSelected();
@@ -2097,6 +2371,10 @@ function selectionMenu(): MenuEntry[] {
   if (entries.length === 1 && entries[0].kind === "folder") {
     const folder = entries[0];
     items.push({ label: "Abrir", hint: "↩", run: () => openEntry(folder) });
+  }
+  if (files.length === 1 && previewable(files[0].file) && !inMusic()) {
+    const file = files[0].file;
+    items.push({ label: "Vista previa", hint: "Espacio", run: () => openViewer(file) });
   }
   if (files.length === 1 && (inMusic() || isAudio(files[0].file))) {
     items.push({ label: "Reproducir", hint: "↩", run: () => void playFile(files[0].file) });
@@ -4645,9 +4923,14 @@ function onKeyDown(event: KeyboardEvent) {
   const mod = event.metaKey || event.ctrlKey;
   const key = event.key;
   const search = $("#search") as HTMLInputElement;
-  // The slideshow covers the window: no shortcut reaches what's behind.
+  // The slideshow and the viewer cover the window: no shortcut reaches
+  // what's behind.
   if (slideshowOpen()) {
     slideshowKey(event);
+    return;
+  }
+  if (viewerOpen()) {
+    viewerKey(event);
     return;
   }
   // Enter on a button, link or map marker presses it, as everywhere.
@@ -4721,6 +5004,13 @@ function onKeyDown(event: KeyboardEvent) {
   } else if (!mod && (key === "ArrowDown" || key === "ArrowUp")) {
     event.preventDefault();
     moveSelection(key === "ArrowDown" ? 1 : -1, event.shiftKey);
+  } else if (!mod && key === " ") {
+    // Space: a preview, as Quick Look.
+    const files = selectedEntries().filter((e): e is FileEntry => e.kind === "file");
+    if (files.length === 1 && previewable(files[0].file)) {
+      event.preventDefault();
+      openViewer(files[0].file);
+    }
   }
 }
 

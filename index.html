@@ -359,7 +359,8 @@
             <dt data-shortcut="refresh">⌘R</dt><dd>Recargar la carpeta</dd>
             <dt data-shortcut="search">⌘F</dt><dd>Buscar en la carpeta</dd>
             <dt data-shortcut="up">⌘↑</dt><dd>Carpeta superior</dd>
-            <dt data-shortcut="open">↩</dt><dd>Abrir la carpeta o descargar lo seleccionado</dd>
+            <dt data-shortcut="open">↩</dt><dd>Abrir la carpeta o la vista previa, o descargar lo seleccionado</dd>
+            <dt>Espacio</dt><dd>Vista previa de una foto, un vídeo o un PDF (← → para pasar)</dd>
             <dt data-shortcut="selectAll">⌘A</dt><dd>Seleccionar todo</dd>
             <dt>↑ ↓</dt><dd data-shortcut-help="arrows">Moverse por la lista (con ⇧, ampliar la selección)</dd>
             <dt data-shortcut="trash">⌘⌫</dt><dd>Mover lo seleccionado a la papelera</dd>
@@ -494,6 +495,24 @@
           <button id="upload-conflict-overwrite" class="secondary-btn">Sobrescribir todos</button>
           <button id="upload-conflict-continue" class="primary-btn">Continuar</button>
         </div>
+      </div>
+    </div>
+
+    <div id="viewer" class="viewer hidden">
+      <div class="viewer-card" role="dialog" aria-modal="true" aria-labelledby="viewer-title" tabindex="-1">
+        <div class="viewer-head">
+          <h2 id="viewer-title" class="viewer-title"></h2>
+          <span id="viewer-count" class="viewer-count"></span>
+          <button id="viewer-download" type="button" class="secondary-btn">Descargar</button>
+          <button id="viewer-close" type="button" class="icon-btn viewer-close" aria-label="Cerrar la vista previa">✕</button>
+        </div>
+        <div id="viewer-stage" class="viewer-stage">
+          <button id="viewer-prev" type="button" class="viewer-nav prev" aria-label="Anterior">‹</button>
+          <img id="viewer-image" class="viewer-image hidden" alt="" />
+          <p id="viewer-empty" class="viewer-empty" role="status"></p>
+          <button id="viewer-next" type="button" class="viewer-nav next" aria-label="Siguiente">›</button>
+        </div>
+        <p id="viewer-note" class="viewer-note"></p>
       </div>
     </div>
 
