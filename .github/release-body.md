@@ -4,16 +4,15 @@ built with Tauri 2 and backed by
 
 ## Changes
 
-- **o2cloud CLI 1.4.3** bundled on macOS, Windows and Linux: downloading a
-  folder no longer downloads again files whose names have invisible
-  characters (accents decoded twice, as WhatsApp sometimes saves them),
-  backslashes or tabs.
-- On macOS, updating from 0.2.7 keeps the Photos permission: both are signed
-  with the project's own certificate.
-- Includes everything from 0.2.7 (Fotos works and keeps its permission,
-  songs play in any folder, clearer Música folders), 0.2.6 (download whole
-  folders, Música by folder, Lugares on the map), 0.2.5 (in-app updates) and
-  earlier.
+- **Fotos recognises big videos already in O2:** a video over 4 GB is stored
+  in parts, and the check across the whole account looked for it by name and
+  size among the parts only, so Fotos showed it as not uploaded. It now finds
+  it whole, as a folder view does. The same check avoids uploading such files
+  again from the disk.
+- Includes everything from 0.2.8 (CLI 1.4.3; updates keep the Photos
+  permission), 0.2.7 (Fotos works, songs play in any folder), 0.2.6
+  (download whole folders, Música by folder, Lugares on the map), 0.2.5
+  (in-app updates) and earlier.
 
 ## Downloads
 

@@ -661,7 +661,55 @@ impl RemoteIndex {
                 .or_default()
                 .push(file.clone());
         }
+        index.add_whole_files(files);
         index
+    }
+
+    /// A file stored in parts (the app's `name.o2part.NNN` + manifest, or
+    /// the CLI's `name.001`…) is in the account's listing only as its
+    /// parts. Index it whole too, by its own name and size, as a folder view
+    /// shows it: otherwise a 6.5 GB video in two parts looks not uploaded.
+    fn add_whole_files(&mut self, files: &[RemoteFile]) {
+        let mut by_folder: HashMap<&str, Vec<RemoteFile>> = HashMap::new();
+        for file in files {
+            let name = file.name.as_str();
+            let in_parts = name.ends_with(".o2manifest.json")
+                || name.ends_with(".o2split.json")
+                || transfer::split_part_name(name).is_some()
+                || transfer::cli_part_name(name).is_some();
+            if in_parts {
+                let folder = folder_of(file.path.as_deref().unwrap_or("/"));
+                by_folder.entry(folder).or_default().push(file.clone());
+            }
+        }
+        for (folder, group) in by_folder {
+            let (logical, _) = transfer::group_logical_files(group);
+            for file in logical {
+                if !file.chunked || file.incomplete || file.size == 0 {
+                    continue;
+                }
+                let Some(id) = file
+                    .manifest_id
+                    .or(file.normal_id)
+                    .or_else(|| file.parts.first().map(|p| p.id))
+                else {
+                    continue;
+                };
+                let path = join_path(folder, &file.name);
+                self.paths.insert(path.clone());
+                self.sizes.insert(file.size);
+                self.by_name_size
+                    .entry((file.name.clone(), file.size))
+                    .or_default()
+                    .push(RemoteFile {
+                        id,
+                        name: file.name,
+                        size: Some(file.size),
+                        date: file.date,
+                        path: Some(path),
+                    });
+            }
+        }
     }
 
     fn has_size(&self, size: u64) -> bool {
@@ -2811,6 +2859,73 @@ mod tests {
         // Hidden folders are left out; a file's own name is not a folder.
         assert_eq!(names.len(), 2);
         assert!(!names.iter().any(|n| n == "x.json"));
+    }
+
+    #[test]
+    fn indexes_files_in_parts_whole() {
+        // As in /Vídeos grandes: IMG_0112.MOV in two of the app's parts.
+        let files: Vec<RemoteFile> = serde_json::from_str(
+            r#"[
+            {"id":10,"name":"IMG_0112.MOV.o2manifest.json","size":569,"path":"/Vídeos grandes/IMG_0112.MOV.o2manifest.json"},
+            {"id":11,"name":"IMG_0112.MOV.o2part.001","size":3670016000,"path":"/Vídeos grandes/IMG_0112.MOV.o2part.001"},
+            {"id":12,"name":"IMG_0112.MOV.o2part.002","size":2914064220,"path":"/Vídeos grandes/IMG_0112.MOV.o2part.002"},
+            {"id":20,"name":"big.iso.001","size":4194303936,"path":"/isos/big.iso.001"},
+            {"id":21,"name":"big.iso.002","size":40,"path":"/isos/big.iso.002"},
+            {"id":30,"name":"IMG_0112.MOV.o2part.001","size":5,"path":"/otra/IMG_0112.MOV.o2part.001"},
+            {"id":40,"name":"a.jpg","size":7,"path":"/a.jpg"}
+            ]"#,
+        )
+        .unwrap();
+        let index = RemoteIndex::new(&files);
+        let copies = copies_from_index(&index, "IMG_0112.MOV", 6_584_080_220);
+        assert_eq!(copies.len(), 1);
+        assert_eq!(copies[0].folder_path, "/Vídeos grandes");
+        assert_eq!(copies[0].remote_id, Some(10));
+        assert!(index.has_size(6_584_080_220));
+        // The CLI's parts (its part size, 4000 MiB less a few bytes), whole.
+        assert_eq!(copies_from_index(&index, "big.iso", 4_194_303_976).len(), 1);
+        // A lone part elsewhere (no manifest) is not taken for the file, and
+        // parts of different folders aren't mixed.
+        assert!(copies_from_index(&index, "IMG_0112.MOV", 5).is_empty());
+        // Plain files as before.
+        assert_eq!(copies_from_index(&index, "a.jpg", 7).len(), 1);
+    }
+
+    /// The whole account's listing through `RemoteIndex`: every file the
+    /// app stored in parts is found whole. Run with
+    /// `O2CLOUD_LIVE_CLI=<o2cloud> cargo test live_whole_files -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn live_whole_files() {
+        let cli = std::env::var("O2CLOUD_LIVE_CLI").expect("O2CLOUD_LIVE_CLI");
+        let out = std::process::Command::new(&cli)
+            .args(["ls", "-a", "--json"])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let files: Vec<RemoteFile> = serde_json::from_slice(&out.stdout).unwrap();
+        let index = RemoteIndex::new(&files);
+        let manifests: Vec<&RemoteFile> = files
+            .iter()
+            .filter(|f| f.name.ends_with(".o2manifest.json"))
+            .collect();
+        println!("{} files, {} part manifests", files.len(), manifests.len());
+        for manifest in manifests {
+            let name = manifest.name.trim_end_matches(".o2manifest.json");
+            let found: Vec<_> = index
+                .by_name_size
+                .iter()
+                .filter(|((n, _), list)| n == name && list.iter().any(|f| f.id == manifest.id))
+                .map(|((_, size), _)| *size)
+                .collect();
+            println!("  {name}: whole {found:?}");
+            assert_eq!(found.len(), 1, "{name} isn't indexed whole");
+        }
     }
 
     #[test]

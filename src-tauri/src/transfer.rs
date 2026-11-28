@@ -937,7 +937,7 @@ fn remote_parent(path: Option<&str>) -> String {
     }
 }
 
-fn split_part_name(name: &str) -> Option<(String, u64)> {
+pub(crate) fn split_part_name(name: &str) -> Option<(String, u64)> {
     let marker = ".o2part.";
     let idx = name.rfind(marker)?;
     let base = &name[..idx];
@@ -950,7 +950,7 @@ fn split_part_name(name: &str) -> Option<(String, u64)> {
 
 /// `name.001` → (`name`, 1). Excludes the app's own `.o2part.NNN` format and
 /// only accepts the three-digit suffix the CLI produces.
-fn cli_part_name(name: &str) -> Option<(String, u64)> {
+pub(crate) fn cli_part_name(name: &str) -> Option<(String, u64)> {
     if name.contains(".o2part.") {
         return None;
     }

@@ -567,7 +567,7 @@ los tres como `source: "file"`. En la repetición,
 - [x] 0.2.7 instalada por OTA desde la 0.2.6, con el requisito del
       certificado: macOS pidió el permiso de Fotos, se concedió y la
       biblioteca carga (28 nov 2026).
-- [ ] Con la 0.2.8 o una build posterior: el permiso de Fotos sigue concedido.
+- [x] Con la 0.2.8 el permiso de Fotos sigue concedido (sección 22).
 - [x] Música: carpetas con 💿, nombre propio y «N canciones · ruta», ▶ en la
       fila; en Ubicaciones, doble clic en una canción la reproduce y
       siguiente/anterior siguen en esa carpeta. Ajustes: 0.2.7 al día y CLI
@@ -584,8 +584,22 @@ los tres como `source: "file"`. En la repetición,
       verde, 13 assets OK, `latest.json` con la 0.2.8, 5 firmas válidas;
       `.dmg` universal con la 1.4.3 en las dos arquitecturas y el **mismo
       requisito de firma** que la 0.2.7 instalada.
-- [ ] Actualizar de la 0.2.7 a la 0.2.8 desde la app y abrir Fotos: debe
-      cargar sin volver a pedir permiso.
+- [x] Actualizada de la 0.2.7 a la 0.2.8 desde la app: Fotos carga **sin
+      volver a pedir permiso**. La firma propia resuelve el problema.
+
+### 23. Fotos: vídeos guardados en partes «no subidos» — 0.2.9 (28 nov 2026)
+
+- [x] Fallo: Fotos daba por no subido `IMG_0112.MOV` (6,58 GB), que está en
+      `/Vídeos grandes` en dos partes de la app (`.o2part.001/.002` +
+      manifiesto). El índice de toda la cuenta (`ls -a`) busca por nombre y
+      tamaño, y ahí solo estaban las partes.
+- [x] Arreglo: `RemoteIndex` agrupa por carpeta las partes (de la app y del
+      CLI) y añade el archivo entero con su nombre y tamaño, como la vista de
+      carpeta. Test con el caso real y otro opt-in, `live_whole_files`, contra
+      la cuenta: los 38 archivos en partes de la app se encuentran enteros
+      (IMG_0112.MOV con 6.584.080.220 bytes; hasta 28 GB).
+- [ ] En la 0.2.9, Fotos marca `IMG_0112.MOV` y los demás vídeos grandes como
+      ya en O2.
 
 ## Cómo limpiar después de una prueba
 
