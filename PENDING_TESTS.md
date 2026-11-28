@@ -564,13 +564,14 @@ los tres como `source: "file"`. En la repetición,
       `.app` del `.dmg` y el del paquete del actualizador llevan
       `flags=runtime`, el entitlement de fototeca y el requisito con el
       certificado; `codesign --verify --deep --strict` correcto.
-- [ ] 0.2.7 instalada (por OTA desde la 0.2.6): conceder Fotos una vez; ver
-      la biblioteca y subir un vídeo pequeño desde Fotos.
+- [x] 0.2.7 instalada por OTA desde la 0.2.6, con el requisito del
+      certificado: macOS pidió el permiso de Fotos, se concedió y la
+      biblioteca carga (28 nov 2026).
 - [ ] Con la 0.2.8 o una build posterior: el permiso de Fotos sigue concedido.
-- [ ] Música: carpetas con 💿, nombre propio y «N canciones · ruta», ▶ en la
+- [x] Música: carpetas con 💿, nombre propio y «N canciones · ruta», ▶ en la
       fila; en Ubicaciones, doble clic en una canción la reproduce y
-      siguiente/anterior siguen en esa carpeta; un `.flac` explica que hay
-      que descargarlo.
+      siguiente/anterior siguen en esa carpeta. Ajustes: 0.2.7 al día y CLI
+      1.4.3 instalada desde el aviso. Todo comprobado en la app.
 
 ### 22. CLI 1.4.3 (28 nov 2026)
 

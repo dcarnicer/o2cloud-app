@@ -4,20 +4,16 @@ built with Tauri 2 and backed by
 
 ## Changes
 
-- **Fotos works, and keeps its permission:** the macOS app is now signed with
-  the project's own (self-signed) certificate instead of an ad-hoc signature,
-  which changed with every build and made macOS forget the Photos permission
-  on each update; and it declares the Photos library access its hardened
-  runtime needs. **Grant the Photos permission once more after installing
-  this version**; later updates keep it.
-- **Listen in any folder:** a song in a folder plays in the app (double click,
-  Enter or ▶) instead of downloading, and the player goes through that
-  folder's songs. Downloading is still in the menu and the row.
-- **Música → Carpetas** shows each folder by its name, with where it is and
-  how many songs beside it, sorted like the other columns, with a ▶ to play it.
-- Includes everything from 0.2.6 (download whole folders, Música by folder,
-  Lugares on the map, CLI 1.4.2), 0.2.5 (in-app updates) and earlier.
-- **o2cloud CLI 1.4.2** bundled on macOS, Windows and Linux.
+- **o2cloud CLI 1.4.3** bundled on macOS, Windows and Linux: downloading a
+  folder no longer downloads again files whose names have invisible
+  characters (accents decoded twice, as WhatsApp sometimes saves them),
+  backslashes or tabs.
+- On macOS, updating from 0.2.7 keeps the Photos permission: both are signed
+  with the project's own certificate.
+- Includes everything from 0.2.7 (Fotos works and keeps its permission,
+  songs play in any folder, clearer Música folders), 0.2.6 (download whole
+  folders, Música by folder, Lugares on the map), 0.2.5 (in-app updates) and
+  earlier.
 
 ## Downloads
 
