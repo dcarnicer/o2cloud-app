@@ -398,8 +398,9 @@ that opens Settings. Next:
   small pictures like Windows' icon views, and a preview before downloading.
 - Where the links come from: `o2cloud media photos --json` already gives each
   photo's thumbnail and preview with its path, but for the whole account (slow
-  on a large one). A folder's listing (`ls --json`) has none, so ask the CLI
-  for thumbnails by file ID or in `ls --json`.
+  on a large one). A folder's listing (`ls --json`) has none: asked for
+  thumbnails by file ID in
+  [o2cloud-cli#64](https://github.com/danielperez9430/o2cloud-cli/issues/64).
 
 ### Download whole folders: next steps
 
@@ -412,8 +413,8 @@ Done in 0.2.6 (asked for in o2cloud-cli#24), with `download-dir`. Next:
 ### Música: by album
 
 Música by folder is done in 0.2.6. By album and artist: the CLI only takes
-the duration from O2's metadata. Check whether O2 keeps the album, artist and
-track number, and if so ask the CLI for them.
+the duration from O2's metadata. Asked in o2cloud-cli#64 whether O2 keeps the
+album, artist and track number, and if so for the CLI to give them.
 
 ### CLI split support: next steps
 
