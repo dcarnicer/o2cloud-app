@@ -572,6 +572,16 @@ los tres como `source: "file"`. En la repetición,
       siguiente/anterior siguen en esa carpeta; un `.flac` explica que hay
       que descargarlo.
 
+### 22. CLI 1.4.3 (28 nov 2026)
+
+- [x] Revisado: solo cambia `download-dir` (nombres con U+0080–U+009F, `\` y
+      tabuladores, #24); los eventos `--json-lines` que lee la app no cambian.
+- [x] Empaquetada: hashes de macOS, Windows y Linux iguales a los de GitHub,
+      commit de Linux `69198f5`, binario local `o2cloud 1.4.3`.
+- [x] `live_download_dir` con 1.4.3 contra la cuenta: pasa, sin restos.
+- [ ] Release que la incluya (0.2.8): de paso, comprobar que el permiso de
+      Fotos concedido en la 0.2.7 sigue tras actualizar.
+
 ## Cómo limpiar después de una prueba
 
 - Borrar el archivo o la carpeta de prueba de O2.
