@@ -1206,13 +1206,93 @@ async fn media_files(
     }
     let args = vec!["media".to_string(), kind.to_string(), "--json".to_string()];
     let files: Vec<RemoteFile> = cli::run_json(app, cli_path, &args).await?;
-    Ok(media_listing(files))
+    let shown = shown_media(files);
+    let folders = if kind == "music" {
+        music_folders(&shown)
+    } else {
+        Vec::new()
+    };
+    let mut listing = media_listing(shown);
+    listing.virtual_folders = folders;
+    Ok(listing)
+}
+
+/// The songs in one of Música's folders (`folder`, as `/a/b`; `/` for the
+/// root), not in its subfolders.
+async fn music_folder_files(
+    app: &AppHandle,
+    cli_path: &Path,
+    folder: &str,
+) -> Result<LogicalListing, String> {
+    let args = vec![
+        "media".to_string(),
+        "music".to_string(),
+        "--json".to_string(),
+    ];
+    let files: Vec<RemoteFile> = cli::run_json(app, cli_path, &args).await?;
+    let in_folder = files
+        .into_iter()
+        .filter(|f| folder_of(f.path.as_deref().unwrap_or("/")) == folder)
+        .collect();
+    Ok(media_listing(in_folder))
+}
+
+/// The folder a file is in, from its path: `/a/b/x.mp3` → `/a/b`,
+/// `/x.mp3` → `/`.
+fn folder_of(path: &str) -> &str {
+    match path.rfind('/') {
+        None | Some(0) => "/",
+        Some(at) => &path[..at],
+    }
+}
+
+/// Música by folder: one entry per folder holding songs, with how many and
+/// their size. Each opens as `media:music-folder:<folder>`.
+fn music_folders(files: &[RemoteFile]) -> Vec<VirtualFolder> {
+    use std::collections::BTreeMap;
+    let mut folders: BTreeMap<&str, (u64, u64)> = BTreeMap::new();
+    for file in files {
+        let folder = folder_of(file.path.as_deref().unwrap_or("/"));
+        let entry = folders.entry(folder).or_default();
+        entry.0 += 1;
+        entry.1 += file.size.unwrap_or(0);
+    }
+    folders
+        .into_iter()
+        .map(|(folder, (files, size))| VirtualFolder {
+            key: format!("media:music-folder:{folder}"),
+            name: if folder == "/" {
+                "O2 Cloud (raíz)".into()
+            } else {
+                folder.trim_start_matches('/').to_string()
+            },
+            files,
+            size,
+            kind: "music-folder".into(),
+            thumbnail: None,
+            location: None,
+            date: None,
+        })
+        .collect()
 }
 
 /// `media_files`' listing: what's in hidden folders (such as this app's
 /// own `.o2cloud-gui`) is left out, as the folder views do.
 fn media_listing(files: Vec<RemoteFile>) -> LogicalListing {
-    let shown = files
+    let (files, warnings) = transfer::group_logical_files(shown_media(files));
+    LogicalListing {
+        path: "/".into(),
+        folders: Vec::new(),
+        files,
+        warnings,
+        virtual_folders: Vec::new(),
+        stale: false,
+    }
+}
+
+/// The media files to show: not those in hidden folders.
+fn shown_media(files: Vec<RemoteFile>) -> Vec<RemoteFile> {
+    files
         .into_iter()
         .filter(|f| {
             !f.name.is_empty()
@@ -1225,16 +1305,7 @@ fn media_listing(files: Vec<RemoteFile>) -> LogicalListing {
                     .skip(1)
                     .any(|dir| dir.starts_with('.'))
         })
-        .collect();
-    let (files, warnings) = transfer::group_logical_files(shown);
-    LogicalListing {
-        path: "/".into(),
-        folders: Vec::new(),
-        files,
-        warnings,
-        virtual_folders: Vec::new(),
-        stale: false,
-    }
+        .collect()
 }
 
 /// The account's music for the player, by name. Hidden folders are left
@@ -1464,6 +1535,12 @@ pub async fn list_dir(
             return Err("Etiqueta no válida".into());
         }
         return label_files(&app, &cli_path, id).await;
+    }
+    if let Some(folder) = virtual_path
+        .as_deref()
+        .and_then(|v| v.strip_prefix("media:music-folder:"))
+    {
+        return music_folder_files(&app, &cli_path, folder).await;
     }
     if let Some(kind) = virtual_path
         .as_deref()
@@ -2449,6 +2526,38 @@ pub async fn download_entry(
     result
 }
 
+/// Download the folder `id` (named `name`) with everything in it into the
+/// local folder `dest`, where it lands as a folder of its name.
+#[tauri::command]
+pub async fn download_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: u64,
+    name: String,
+    dest: String,
+    transfer_id: Option<String>,
+) -> Result<crate::download_dir::FolderDownload, String> {
+    let cli_path = state.cli.path_or_err()?;
+    let transfer_id = transfer_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let result = async {
+        ensure_session(&app, &cli_path).await?;
+        crate::download_dir::download_folder(
+            &app,
+            &cli_path,
+            &id.to_string(),
+            &name,
+            Path::new(&dest),
+            &transfer_id,
+        )
+        .await
+    }
+    .await;
+    if let Err(err) = &result {
+        transfer::emit_failed(&app, &transfer_id, "download", &name, err);
+    }
+    result
+}
+
 async fn rm(app: &AppHandle, cli_path: &Path, id: u64, recursive: bool) -> Result<(), String> {
     let mut args = vec!["rm".to_string(), id.to_string()];
     if recursive {
@@ -2702,6 +2811,36 @@ mod tests {
         // Hidden folders are left out; a file's own name is not a folder.
         assert_eq!(names.len(), 2);
         assert!(!names.iter().any(|n| n == "x.json"));
+    }
+
+    #[test]
+    fn groups_music_by_folder() {
+        assert_eq!(folder_of("/musica/Queen/a.mp3"), "/musica/Queen");
+        assert_eq!(folder_of("/a.mp3"), "/");
+        assert_eq!(folder_of("a.mp3"), "/");
+        let files: Vec<RemoteFile> = serde_json::from_str(
+            r#"[{"id":1,"name":"a.mp3","size":10,"path":"/musica/Queen/a.mp3"},
+                {"id":2,"name":"b.mp3","size":20,"path":"/musica/Queen/b.mp3"},
+                {"id":3,"name":"c.mp3","size":5,"path":"/musica/c.mp3"},
+                {"id":4,"name":"d.mp3","path":"/d.mp3"},
+                {"id":5,"name":"x.mp3","size":1,"path":"/.o2cloud-gui/x.mp3"}]"#,
+        )
+        .unwrap();
+        let folders = music_folders(&shown_media(files));
+        let summary: Vec<_> = folders
+            .iter()
+            .map(|f| (f.key.as_str(), f.name.as_str(), f.files, f.size))
+            .collect();
+        // By path; the root has a name of its own; hidden folders stay out.
+        assert_eq!(
+            summary,
+            [
+                ("media:music-folder:/", "O2 Cloud (raíz)", 1, 0),
+                ("media:music-folder:/musica", "musica", 1, 5),
+                ("media:music-folder:/musica/Queen", "musica/Queen", 2, 30),
+            ]
+        );
+        assert!(folders.iter().all(|f| f.kind == "music-folder"));
     }
 
     /// The real CLI's `labels` output through the app's types. Run with

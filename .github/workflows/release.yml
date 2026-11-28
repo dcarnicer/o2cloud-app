@@ -158,7 +158,7 @@ jobs:
       - name: Bundle the o2cloud CLI (macOS)
         if: matrix.platform == 'macos-latest'
         env:
-          CLI_VERSION: 1.4.1
+          CLI_VERSION: 1.4.2
         run: |
           set -euo pipefail
           base="https://github.com/danielperez9430/o2cloud-cli/releases/download/v${CLI_VERSION}"
@@ -169,9 +169,9 @@ jobs:
           curl -fsSL "$base/o2cloud-x86_64-apple-darwin.tar.gz" \
             -o "$RUNNER_TEMP/o2cloud-x86_64.tar.gz"
 
-          echo "8c5d4e3258e8cb498fd9ae4e37e879bdc35f75029f9fb485b1f5cfb285ef7ea5  $RUNNER_TEMP/o2cloud-aarch64.tar.gz" \
+          echo "76d852cabc9863dbf363b4c39134455711a4565cd1c5de1fa908dd1c7d872297  $RUNNER_TEMP/o2cloud-aarch64.tar.gz" \
             | shasum -a 256 -c -
-          echo "c8570a43666e9b0ff7b30a1c27eeca40ae7c810ccf018310a21d257ec949c292  $RUNNER_TEMP/o2cloud-x86_64.tar.gz" \
+          echo "1d1fc68d8eee071cf414751acfca2de87336b4d57a3d0724d85a904496f352e5  $RUNNER_TEMP/o2cloud-x86_64.tar.gz" \
             | shasum -a 256 -c -
 
           tar -xzf "$RUNNER_TEMP/o2cloud-aarch64.tar.gz" -C src-tauri/bin/macos-aarch64
@@ -185,8 +185,8 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: pwsh
         env:
-          CLI_VERSION: 1.4.1
-          CLI_SHA256: 5921c411b0fc0e12f8dccb06875056ca0a0aaf8b7b7baf8dcce8de66cbef4922
+          CLI_VERSION: 1.4.2
+          CLI_SHA256: 82afa1020400f582b176d9d2ff81277b7edf71df87b88160eda6394c507e1d27
         run: |
           $ErrorActionPreference = "Stop"
           $zip = Join-Path $env:RUNNER_TEMP "o2cloud-windows.zip"
@@ -211,10 +211,10 @@ jobs:
       - name: Build the o2cloud CLI (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         env:
-          CLI_COMMIT: e10aa6a888e2c19f774e588f67c59c10e9a1e483
+          CLI_COMMIT: cfa201b32485f53617e7a0f1938b4ff486dff20d
         run: |
           set -euo pipefail
-          git clone --depth 1 --branch v1.4.1 \
+          git clone --depth 1 --branch v1.4.2 \
             https://github.com/danielperez9430/o2cloud-cli.git \
             "$RUNNER_TEMP/o2cloud-cli"
           test "$(git -C "$RUNNER_TEMP/o2cloud-cli" rev-parse HEAD)" = "$CLI_COMMIT"

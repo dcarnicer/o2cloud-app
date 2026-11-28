@@ -4,22 +4,23 @@ built with Tauri 2 and backed by
 
 ## Changes
 
-- **The app updates itself:** on startup it checks the latest release and, if
-  there is a newer version, a notification opens Settings at **App O2 Cloud →
-  Actualizar y reiniciar**. Settings can also check by hand. Updates are
-  signed with the app's own key and refused otherwise, wait for transfers to
-  finish, and use the same kind of installer as the installed app, so no
-  second copy is left. **Install this version by hand once**; later ones
-  arrive through the app.
-- Includes everything from 0.2.4 (new CLI notice, «Actualizar CLI» hides after
-  updating, no «Ver como pase» for video-only moments), 0.2.3 (the bundled CLI
-  is used again), 0.2.2 (CLI 1.4.1, wrong-extension messages in Spanish),
-  0.2.1 (overwriting a recent upload waits for O2, `MED-1017`) and 0.2.0:
-  Recuerdos (Momentos, Lugares, Personas), Pase, Biblioteca (Música and
-  Documentos), upload conflicts, `--json-lines` progress and SHA-256, and the
-  accessibility pass.
-- **o2cloud CLI 1.4.1** bundled on macOS, Windows and Linux (Linux built from
-  source on Ubuntu 22.04; the official Linux asset needs GLIBC 2.39).
+- **Download whole folders:** select a folder (or several, with files too) and
+  «Descargar»: it comes down with everything in it, as a folder of its name.
+  Files already there are skipped and a cut download carries on where it
+  stopped, so downloading again finishes the job. Files the app once uploaded
+  in `.o2part` parts are joined and checked against their SHA-256. Asked for
+  in [o2cloud-cli#24](https://github.com/danielperez9430/o2cloud-cli/issues/24).
+- **Música by folder:** «Canciones / Carpetas» shows one entry per folder
+  holding songs; a folder plays through its own songs.
+- **Lugares opens on the map**, and remembers if you prefer the list.
+- **o2cloud CLI 1.4.2** bundled on macOS, Windows and Linux (`download-dir`
+  finds files with emoji in their names); Linux still built from source on
+  Ubuntu 22.04.
+- From 0.2.5 on the app updates itself: if you have 0.2.5, it offers this
+  version on startup. Older versions: install this one by hand once.
+- Includes everything from 0.2.5 (in-app updates), 0.2.4 (new CLI notice),
+  0.2.3, 0.2.2, 0.2.1 and 0.2.0: Recuerdos, Pase, Biblioteca, upload
+  conflicts, `--json-lines` progress and SHA-256, and the accessibility pass.
 
 ## Downloads
 

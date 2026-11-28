@@ -277,10 +277,17 @@ async fn collect_stream<R: AsyncRead + Unpin>(
     mut login_window: Option<tokio::sync::oneshot::Sender<()>>,
     progress: Option<Arc<AtomicU64>>,
     waiting: Option<Arc<AtomicBool>>,
+    events: Option<tokio::sync::mpsc::UnboundedSender<String>>,
 ) -> String {
     let mut lines = BufReader::new(reader).lines();
     let mut collected = String::new();
     while let Ok(Some(line)) = lines.next_line().await {
+        // `--json-lines` for a whole folder: every event goes to the caller,
+        // and none is kept (a whole account is hundreds of thousands).
+        if let Some(events) = &events {
+            let _ = events.send(line);
+            continue;
+        }
         // `--json-lines`: the bytes the CLI has sent of the file so far.
         if let Some(bytes) = progress.as_ref().and_then(|_| progress_bytes(&line)) {
             if let Some(sink) = &progress {
@@ -415,7 +422,7 @@ async fn run_watched_with_env(
     env: &[(&str, &str)],
     watch: impl FnMut(u32) -> ControlFlow<String>,
 ) -> Result<CliOutput, String> {
-    let exit = run_inner(app, path, args, env, None, None, watch).await?;
+    let exit = run_inner(app, path, args, env, None, None, None, watch).await?;
     if exit.code != 0 {
         let detail = if exit.output.stderr.trim().is_empty() {
             exit.output.stdout
@@ -439,9 +446,34 @@ pub async fn run_events(
     waiting: Arc<AtomicBool>,
     watch: impl FnMut(u32) -> ControlFlow<String>,
 ) -> Result<CliExit, String> {
-    run_inner(app, path, args, &[], Some(progress), Some(waiting), watch).await
+    run_inner(
+        app,
+        path,
+        args,
+        &[],
+        Some(progress),
+        Some(waiting),
+        None,
+        watch,
+    )
+    .await
 }
 
+/// Run a CLI command with `--json-lines`, sending each line of its stdout
+/// to `events` as it comes instead of keeping it, and calling `watch` as in
+/// `run_watched`. The exit code is returned with stderr; stdout comes back
+/// empty.
+pub async fn run_lines(
+    app: &AppHandle,
+    path: &Path,
+    args: &[String],
+    events: tokio::sync::mpsc::UnboundedSender<String>,
+    watch: impl FnMut(u32) -> ControlFlow<String>,
+) -> Result<CliExit, String> {
+    run_inner(app, path, args, &[], None, None, Some(events), watch).await
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn run_inner(
     app: &AppHandle,
     path: &Path,
@@ -449,6 +481,7 @@ async fn run_inner(
     env: &[(&str, &str)],
     progress: Option<Arc<AtomicU64>>,
     waiting: Option<Arc<AtomicBool>>,
+    events: Option<tokio::sync::mpsc::UnboundedSender<String>>,
     mut watch: impl FnMut(u32) -> ControlFlow<String>,
 ) -> Result<CliExit, String> {
     let mut cmd = tokio::process::Command::new(path);
@@ -478,12 +511,14 @@ async fn run_inner(
         None,
         progress,
         waiting,
+        events,
     ));
     let err_task = tokio::spawn(collect_stream(
         stderr,
         app.clone(),
         "stderr",
         Some(login_tx),
+        None,
         None,
         None,
     ));

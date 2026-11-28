@@ -15,7 +15,7 @@ use crate::types::{
     TransferProgress, UploadOutput,
 };
 
-const READ_BUFFER: usize = 1024 * 1024;
+pub(crate) const READ_BUFFER: usize = 1024 * 1024;
 
 /// A CLI split without a manifest is only grouped when its first part is
 /// large enough to be a real split (the CLI uses 4000 MiB). This keeps
@@ -52,7 +52,7 @@ pub fn should_hash_before_upload(size: u64, same_size_exists: bool) -> bool {
     size <= PREFLIGHT_HASH_MAX_BYTES || same_size_exists
 }
 
-fn emit(app: &AppHandle, progress: TransferProgress) {
+pub(crate) fn emit(app: &AppHandle, progress: TransferProgress) {
     let _ = app.emit("transfer-progress", progress);
 }
 
@@ -84,12 +84,12 @@ fn append_folder_arg(args: &mut Vec<String>, folder_id: Option<u64>) {
 /// A transfer whose data stops moving for this long is stopped and tried
 /// again. The CLI sets no time limit on sending or receiving file data, so
 /// a dead connection would otherwise hold up the queue forever.
-const STALLED_AFTER: Duration = Duration::from_secs(3 * 60);
+pub(crate) const STALLED_AFTER: Duration = Duration::from_secs(3 * 60);
 
 /// How long O2 may take while no data can move: before a download's first
 /// byte (the CLI lists the whole account first) and once an upload is sent
 /// (O2 stores it before answering).
-const WAITING_LIMIT: Duration = Duration::from_secs(15 * 60);
+pub(crate) const WAITING_LIMIT: Duration = Duration::from_secs(15 * 60);
 
 /// The waits before each new attempt at a transfer that failed for a reason
 /// that may pass. At least a minute, so that an upload O2 stored despite the
@@ -104,23 +104,23 @@ const RETRY_DELAYS: [Duration; 3] = [
 const STALLED: &str = "La transferencia se ha atascado";
 
 /// Notices a transfer that has gone too long without moving.
-struct Watchdog {
+pub(crate) struct Watchdog {
     last_move: Instant,
 }
 
 impl Watchdog {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             last_move: Instant::now(),
         }
     }
 
-    fn moved(&mut self) {
+    pub(crate) fn moved(&mut self) {
         self.last_move = Instant::now();
     }
 
     /// Break once nothing has moved for `limit`.
-    fn check(&self, limit: Duration) -> ControlFlow<String> {
+    pub(crate) fn check(&self, limit: Duration) -> ControlFlow<String> {
         if self.last_move.elapsed() < limit {
             ControlFlow::Continue(())
         } else {
@@ -1878,7 +1878,7 @@ fn truncate_utf16(value: &str, max_units: usize) -> String {
 
 /// Where a download is written until it is complete and verified: next to
 /// the destination, so putting it in place is a rename.
-fn partial_path(dest: &Path) -> PathBuf {
+pub(crate) fn partial_path(dest: &Path) -> PathBuf {
     let mut name = dest.file_name().unwrap_or_default().to_os_string();
     name.push(".o2download");
     dest.with_file_name(name)
@@ -1886,7 +1886,7 @@ fn partial_path(dest: &Path) -> PathBuf {
 
 /// Put a finished download in place. The save dialog has already asked
 /// before replacing an existing file.
-async fn move_into_place(partial: &Path, dest: &Path) -> Result<(), String> {
+pub(crate) async fn move_into_place(partial: &Path, dest: &Path) -> Result<(), String> {
     // On Windows a rename does not replace an existing file.
     #[cfg(windows)]
     {

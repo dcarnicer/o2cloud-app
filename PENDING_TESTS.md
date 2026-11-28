@@ -500,6 +500,27 @@ los tres como `source: "file"`. En la repetición,
 - [ ] Windows (NSIS y MSI) y Linux (AppImage y `.deb`): la actualización usa
       el mismo instalador y no deja dos instalaciones.
 
+### 20. Carpetas, Música por carpeta, Lugares y CLI 1.4.2 — 0.2.6 (28 nov 2026)
+
+- [x] CLI 1.4.2 empaquetada: hashes de macOS y Windows iguales a los que
+      publica GitHub, commit de Linux `cfa201b`, binario local `o2cloud
+      1.4.2`. La GUI no usa nada que cambie salvo `download-dir`.
+- [x] Tests: eventos de `download-dir --json-lines` (progreso, fallos,
+      manifiestos) y unión de partes `.o2part` (SHA-256 por parte y total,
+      parte dañada, ya unido, nombre de parte fuera de la carpeta).
+- [x] Música por carpeta: test de agrupación por ruta (raíz, subcarpetas,
+      ocultas fuera).
+- [ ] Descargar una carpeta pequeña real (p. ej. `grlife`) y comprobar el
+      progreso, el aviso final y que repetirla dice «ya estaban».
+- [ ] Una carpeta con un archivo `.o2part` de la app: se une y se borran las
+      partes y el manifiesto; con un `name.001` del CLI, lo une el CLI.
+- [ ] Una carpeta con nombres con emoji (la 1.4.2 no los descarga otra vez).
+- [ ] Música «Carpetas»: abrir una, reproducir y que siguiente/anterior se
+      queden en esa carpeta; la elección se recuerda al reiniciar.
+- [ ] Lugares abre en el mapa; con «Lista», al reiniciar sigue en lista.
+- [ ] OTA real: la 0.2.5 instalada ofrece la 0.2.6 al arrancar y se actualiza
+      sin dejar dos copias (sección 19).
+
 ## Cómo limpiar después de una prueba
 
 - Borrar el archivo o la carpeta de prueba de O2.

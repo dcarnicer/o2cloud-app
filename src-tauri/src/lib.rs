@@ -2,6 +2,7 @@ mod cache;
 mod camera;
 mod cli;
 mod commands;
+mod download_dir;
 mod library;
 mod photos;
 mod transfer;
@@ -69,6 +70,7 @@ pub fn run() {
             commands::library_match_photos,
             commands::library_check_paths,
             commands::download_entry,
+            commands::download_folder,
             commands::delete_entries,
             commands::get_quota,
             commands::check_cli_update,

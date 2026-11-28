@@ -284,6 +284,10 @@ const PHOTO_PAGE = 300;
 /** O2's per-file limit; the Photos view can filter to the files that hit it. */
 const LARGE_FILE = 4 * 1024 ** 3;
 const SORT_STORAGE = "o2cloud.sort";
+const PLACES_VIEW_STORAGE = "o2cloud.placesView";
+const MUSIC_VIEW_STORAGE = "o2cloud.musicView";
+/** Música's folders open as `media:music-folder:<folder>`. */
+const MUSIC_FOLDER = "media:music-folder:";
 /** Folders created in this session that are known to be empty, with expiry. */
 const knownEmptyFolders = new Map<number, number>();
 const EMPTY_FOLDER_GRACE_MS = 2 * 60_000;
@@ -487,6 +491,25 @@ function loadSort(): { key: SortKey; dir: 1 | -1 } {
     // Storage unavailable: use the default.
   }
   return { key: "name", dir: 1 };
+}
+
+/** A view chosen before (how Lugares or Música are shown), or `fallback`. */
+function loadChoice<T extends string>(key: string, choices: readonly T[], fallback: T): T {
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved && (choices as readonly string[]).includes(saved)) return saved as T;
+  } catch {
+    // Storage unavailable: the default.
+  }
+  return fallback;
+}
+
+function saveChoice(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Not remembered this time.
+  }
 }
 
 function saveSort() {
@@ -840,7 +863,7 @@ let entriesCache = {
 function visibleEntries(): Entry[] {
   const listing = state.listing;
   if (!listing) return [];
-  const signature = `${state.sort.key}:${state.sort.dir}:${state.filter}`;
+  const signature = `${state.sort.key}:${state.sort.dir}:${state.filter}:${musicView}`;
   if (entriesCache.listing === listing && entriesCache.signature === signature) {
     return entriesCache.entries;
   }
@@ -859,7 +882,11 @@ function visibleEntries(): Entry[] {
     .map((file): Entry => ({ kind: "file", key: fileKey(file), name: file.name, file }))
     .sort(compareEntries);
 
-  const entries = [...virtual, ...folders, ...files];
+  let entries = [...virtual, ...folders, ...files];
+  // Música shows its songs or its folders, not both.
+  if (currentCrumb().virtual === "media:music") {
+    entries = musicView === "folders" ? virtual : files;
+  }
   entriesCache = { listing, signature, entries };
   return entries;
 }
@@ -1139,6 +1166,9 @@ function emptyTexts(view: string): [string, string] {
     case "media:documents":
       return ["No hay documentos en O2 Cloud.", "Usa «Subir»: aparecerán aquí en unos segundos."];
     default:
+      if (view.startsWith(MUSIC_FOLDER)) {
+        return ["No hay canciones en esta carpeta.", "Puede que se hayan movido o borrado."];
+      }
       return view.startsWith("label:")
         ? ["No hay fotos aquí.", "O2 puede haberlas quitado de este grupo."]
         : ["Esta carpeta está vacía.", "Arrastra archivos aquí o usa «Subir»."];
@@ -1147,8 +1177,10 @@ function emptyTexts(view: string): [string, string] {
 
 // ---------- Moments, places and their slideshow ----------
 
-/** How places are shown: as a list (the table) or on a map. */
-let placesView: "list" | "map" = "list";
+/** How places are shown: on the map (by default) or as a list; remembered. */
+let placesView: "list" | "map" = loadChoice(PLACES_VIEW_STORAGE, ["list", "map"] as const, "map");
+/** How Música is shown: every song, or its folders; remembered. */
+let musicView: "songs" | "folders" = loadChoice(MUSIC_VIEW_STORAGE, ["songs", "folders"] as const, "songs");
 let map: L.Map | null = null;
 let markers: L.LayerGroup | null = null;
 let fittedPlaces = "";
@@ -1173,11 +1205,18 @@ function renderLabelViews() {
   const files = state.listing?.files ?? [];
   const onlyVideos = files.length > 0 && files.every((f) => VIDEO_NAME.test(f.name));
   $("#slideshow-btn").classList.toggle("hidden", !view.startsWith("label:") || onlyVideos);
-  $("#play-music-btn").classList.toggle("hidden", view !== "media:music" || !state.listing?.files.length);
+  $("#music-toggle").classList.toggle("hidden", view !== "media:music");
+  for (const button of document.querySelectorAll<HTMLButtonElement>("#music-toggle button")) {
+    button.setAttribute("aria-pressed", String(button.dataset.view === musicView));
+  }
+  $("#play-music-btn").classList.toggle("hidden", !inMusic() || !state.listing?.files.length);
   // Nothing goes into a moment or place (O2 makes them), and none of these
   // views is a folder to create one in. Música and Documentos take uploads:
   // they go to O2 Cloud's root, and O2 files them there by their kind.
-  $("#upload-btn").classList.toggle("hidden", view.startsWith("label"));
+  $("#upload-btn").classList.toggle(
+    "hidden",
+    view.startsWith("label") || view.startsWith(MUSIC_FOLDER),
+  );
   $("#new-folder-btn").classList.toggle(
     "hidden",
     view.startsWith("label") || view.startsWith("media:"),
@@ -1294,7 +1333,15 @@ function renderMap() {
 
 function setPlacesView(view: "list" | "map") {
   placesView = view;
+  saveChoice(PLACES_VIEW_STORAGE, view);
   renderLabelViews();
+}
+
+function setMusicView(view: "songs" | "folders") {
+  musicView = view;
+  saveChoice(MUSIC_VIEW_STORAGE, view);
+  state.selected.clear();
+  renderListing();
 }
 
 // The slideshow: the photos, one every few seconds, with music on a loop.
@@ -1563,14 +1610,36 @@ function slideshowKey(event: KeyboardEvent): boolean {
 // ---------- Music player ----------
 
 /** The songs, in the order they're played; fetched when first needed. */
+/** Every song, as the CLI lists them (by name). */
+let allTracks: Track[] = [];
+/** What the player goes through: every song, or one folder's. */
 let tracks: Track[] = [];
+/** The folder `tracks` are from (null: every song). */
+let tracksFolder: string | null = null;
+
+/** The folder a song is in, from its path (`/a/b/x.mp3` → `/a/b`). */
+function folderOfPath(path: string | null): string {
+  const at = (path ?? "").lastIndexOf("/");
+  return at <= 0 ? "/" : path!.slice(0, at);
+}
+
+function tracksIn(folder: string | null): Track[] {
+  return folder === null ? allTracks : allTracks.filter((t) => folderOfPath(t.path) === folder);
+}
 let trackIndex = -1;
 /** The song whose link was asked for again (once per song, until it
  * plays), in case it had expired. */
 let retriedTrackId: number | null = null;
 
 function inMusic(): boolean {
-  return currentCrumb().virtual === "media:music";
+  // All the songs, or one of Música's folders.
+  return currentCrumb().virtual?.startsWith("media:music") ?? false;
+}
+
+/** The folder of Música open now (`/a/b`), or null for all the songs. */
+function musicFolder(): string | null {
+  const view = currentCrumb().virtual ?? "";
+  return view.startsWith(MUSIC_FOLDER) ? view.slice(MUSIC_FOLDER.length) : null;
 }
 
 function playerAudio(): HTMLAudioElement {
@@ -1588,17 +1657,21 @@ function formatTime(seconds: number): string {
 
 async function loadTracks(): Promise<boolean> {
   try {
-    tracks = await invoke<Track[]>("music_tracks");
+    allTracks = await invoke<Track[]>("music_tracks");
   } catch (error) {
     toast(String(error), "error");
     return false;
   }
+  tracks = tracksIn(tracksFolder);
   if (!tracks.length) toast("No hay música que reproducir.", "info");
   return tracks.length > 0;
 }
 
 /** Play `file` (a row of Música), or the selection, or from the first. */
 async function playFile(file?: LogicalFile) {
+  // It plays through what's on screen: one folder's songs, or all of them.
+  tracksFolder = musicFolder();
+  tracks = tracksIn(tracksFolder);
   const id = file?.normal_id ?? null;
   // A song uploaded since the list was fetched: fetch it again.
   const known = id === null ? tracks.length > 0 : tracks.some((t) => t.id === id);
@@ -1731,6 +1804,11 @@ function bindLabelViews() {
   for (const button of document.querySelectorAll<HTMLButtonElement>("#view-toggle button")) {
     button.addEventListener("click", () => setPlacesView(button.dataset.view === "map" ? "map" : "list"));
   }
+  for (const button of document.querySelectorAll<HTMLButtonElement>("#music-toggle button")) {
+    button.addEventListener("click", () =>
+      setMusicView(button.dataset.view === "folders" ? "folders" : "songs"),
+    );
+  }
   $("#slide-prev").addEventListener("click", () => showSlide(slideshow.index - 1, true));
   $("#slide-next").addEventListener("click", () => showSlide(slideshow.index + 1, true));
   $("#slide-play").addEventListener("click", () => setSlideshowPlaying(!slideshow.playing));
@@ -1832,10 +1910,8 @@ function updateSelection() {
   if (!entries.length) return;
   const size = entries.reduce((sum, entry) => sum + sizeOf(entry), 0);
   $("#selection-text").textContent = `${plural(entries.length, "seleccionado", "seleccionados")} · ${formatSize(size)}`;
-  const files = entries.filter((entry) => entry.kind === "file").length;
-  const download = $("#selection-download") as HTMLButtonElement;
-  download.disabled = files === 0;
-  download.title = files < entries.length ? "Las carpetas no se descargan; solo los archivos" : "";
+  // Folders download with everything in them.
+  ($("#selection-download") as HTMLButtonElement).disabled = false;
 }
 
 function openEntry(entry: Entry) {
@@ -1860,8 +1936,15 @@ function openSelection() {
 }
 
 function downloadSelected() {
-  const files = selectedEntries().filter((entry): entry is FileEntry => entry.kind === "file");
-  if (files.length) void downloadFiles(files.map((entry) => entry.file));
+  const entries = selectedEntries();
+  const files = entries
+    .filter((entry): entry is FileEntry => entry.kind === "file")
+    .map((entry) => entry.file);
+  const folders = entries
+    .filter((entry): entry is FolderEntry => entry.kind === "folder")
+    .map((entry) => entry.folder);
+  if (folders.length) void downloadFolders(folders, files);
+  else if (files.length) void downloadFiles(files);
 }
 
 // ---------- Menus ----------
@@ -1928,9 +2011,17 @@ function selectionMenu(): MenuEntry[] {
   if (files.length === 1 && inMusic()) {
     items.push({ label: "Reproducir", hint: "↩", run: () => void playFile(files[0].file) });
   }
-  if (files.length) {
+  const folders = entries.length - files.length;
+  if (entries.length) {
     items.push({
-      label: files.length === 1 ? "Descargar…" : `Descargar ${files.length} archivos…`,
+      label:
+        entries.length === 1
+          ? folders
+            ? "Descargar carpeta…"
+            : "Descargar…"
+          : folders
+            ? `Descargar ${entries.length} elementos…`
+            : `Descargar ${files.length} archivos…`,
       hint: items.length ? undefined : "↩",
       run: downloadSelected,
     });
@@ -1949,7 +2040,8 @@ function selectionMenu(): MenuEntry[] {
  * go to the root), or null for folders. */
 function groupedView(): "labels" | "media" | null {
   const view = currentCrumb().virtual ?? "";
-  if (view.startsWith("label")) return "labels";
+  // A folder of Música only shows songs: nothing is uploaded into it.
+  if (view.startsWith("label") || view.startsWith(MUSIC_FOLDER)) return "labels";
   if (view.startsWith("media:")) return "media";
   return null;
 }
@@ -3653,10 +3745,10 @@ async function uploadPhotos(assets: PhotoAsset[]) {
 }
 
 /** One file: ask where to save it. Several: ask for a folder; nothing in it is replaced. */
-async function downloadFiles(files: LogicalFile[]) {
+async function downloadFiles(files: LogicalFile[], into?: string) {
   if (!files.length) return;
   let jobs: { file: LogicalFile; dest: string; overwrite: boolean }[];
-  if (files.length === 1) {
+  if (files.length === 1 && !into) {
     const dest = await save({
       title: "Guardar archivo",
       defaultPath: safeDownloadName(files[0].name),
@@ -3664,10 +3756,12 @@ async function downloadFiles(files: LogicalFile[]) {
     if (!dest) return;
     jobs = [{ file: files[0], dest, overwrite: true }];
   } else {
-    const dir = await open({
-      directory: true,
-      title: `Elige dónde guardar ${files.length} archivos`,
-    });
+    const dir =
+      into ??
+      (await open({
+        directory: true,
+        title: `Elige dónde guardar ${files.length} archivos`,
+      }));
     if (!dir || Array.isArray(dir)) return;
     jobs = await Promise.all(
       files.map(async (file) => ({
@@ -3718,6 +3812,69 @@ async function downloadFiles(files: LogicalFile[]) {
     );
   } else {
     toast(`Descargados ${jobs.length} archivos`, "success");
+  }
+}
+
+interface FolderDownload {
+  files: number;
+  downloaded: number;
+  skipped: number;
+  joined: number;
+  failed: string[];
+}
+
+/**
+ * Download folders, with everything in them, and any files selected with
+ * them, into a local folder chosen once. Each folder lands as a folder of
+ * its name; files already there with the same size are skipped and cut
+ * downloads resumed, so downloading again carries on.
+ */
+async function downloadFolders(folders: RemoteFolder[], files: LogicalFile[] = []) {
+  const count = folders.length + files.length;
+  const dir = await open({
+    directory: true,
+    title: count === 1 ? `Elige dónde guardar «${folders[0].name}»` : `Elige dónde guardar ${count} elementos`,
+  });
+  if (!dir || Array.isArray(dir)) return;
+
+  const transferIds = folders.map((folder) => queueTransfer("download", folder.name, folder.size));
+  renderQueue();
+  openTransfers();
+  let failed = 0;
+  let incomplete = 0;
+  for (const [index, folder] of folders.entries()) {
+    try {
+      const result = await invoke<FolderDownload>("download_folder", {
+        transferId: transferIds[index],
+        id: folder.id,
+        name: folder.name,
+        dest: dir,
+      });
+      if (result.failed.length) incomplete++;
+    } catch (error) {
+      failed++;
+      if (folders.length === 1 || isSessionError(String(error))) {
+        reportError(error);
+        if (folders.length > 1) break;
+      }
+    }
+  }
+  failQueued(transferIds, "Cancelada");
+  if (files.length) await downloadFiles(files, dir);
+
+  if (failed || incomplete) {
+    if (folders.length > 1 || incomplete) {
+      toast(
+        "Algunas carpetas no se han descargado enteras. Los detalles están en Transferencias; descargarlas otra vez continúa donde se quedaron.",
+        "error",
+        12000,
+      );
+    }
+  } else {
+    toast(
+      folders.length === 1 ? `Carpeta descargada: ${folders[0].name}` : `${folders.length} carpetas descargadas`,
+      "success",
+    );
   }
 }
 
@@ -4366,6 +4523,7 @@ async function logout() {
     if (slideshowOpen()) closeSlideshow();
     stopPlayer();
     tracks = [];
+    allTracks = [];
     state.session = {
       logged_in: false,
       raw: "",
