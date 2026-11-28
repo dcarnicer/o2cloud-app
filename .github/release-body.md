@@ -4,23 +4,20 @@ built with Tauri 2 and backed by
 
 ## Changes
 
-- **Download whole folders:** select a folder (or several, with files too) and
-  «Descargar»: it comes down with everything in it, as a folder of its name.
-  Files already there are skipped and a cut download carries on where it
-  stopped, so downloading again finishes the job. Files the app once uploaded
-  in `.o2part` parts are joined and checked against their SHA-256. Asked for
-  in [o2cloud-cli#24](https://github.com/danielperez9430/o2cloud-cli/issues/24).
-- **Música by folder:** «Canciones / Carpetas» shows one entry per folder
-  holding songs; a folder plays through its own songs.
-- **Lugares opens on the map**, and remembers if you prefer the list.
-- **o2cloud CLI 1.4.2** bundled on macOS, Windows and Linux (`download-dir`
-  finds files with emoji in their names); Linux still built from source on
-  Ubuntu 22.04.
-- From 0.2.5 on the app updates itself: if you have 0.2.5, it offers this
-  version on startup. Older versions: install this one by hand once.
-- Includes everything from 0.2.5 (in-app updates), 0.2.4 (new CLI notice),
-  0.2.3, 0.2.2, 0.2.1 and 0.2.0: Recuerdos, Pase, Biblioteca, upload
-  conflicts, `--json-lines` progress and SHA-256, and the accessibility pass.
+- **Fotos works, and keeps its permission:** the macOS app is now signed with
+  the project's own (self-signed) certificate instead of an ad-hoc signature,
+  which changed with every build and made macOS forget the Photos permission
+  on each update; and it declares the Photos library access its hardened
+  runtime needs. **Grant the Photos permission once more after installing
+  this version**; later updates keep it.
+- **Listen in any folder:** a song in a folder plays in the app (double click,
+  Enter or ▶) instead of downloading, and the player goes through that
+  folder's songs. Downloading is still in the menu and the row.
+- **Música → Carpetas** shows each folder by its name, with where it is and
+  how many songs beside it, sorted like the other columns, with a ▶ to play it.
+- Includes everything from 0.2.6 (download whole folders, Música by folder,
+  Lugares on the map, CLI 1.4.2), 0.2.5 (in-app updates) and earlier.
+- **o2cloud CLI 1.4.2** bundled on macOS, Windows and Linux.
 
 ## Downloads
 
@@ -42,8 +39,8 @@ shasum -a 256 -c SHA256SUMS.txt # macOS
 
 ## These builds are not signed
 
-macOS builds are **ad-hoc signed and not notarized**; Windows and Linux builds
-are **not code-signed**. These are free, personal-project builds, so no paid
+macOS builds are **signed with the project's own self-signed certificate and
+not notarized**; Windows and Linux builds are **not code-signed**. These are free, personal-project builds, so no paid
 signing certificates are used. The operating system may warn the first time you
 open them:
 

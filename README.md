@@ -34,7 +34,7 @@ Files uploaded with older versions keep their `.o2part.NNN` + `.o2manifest.json`
 - Downloads go to `<name>.o2download` and are renamed into place only when complete; `.o2part` files are checked part by part and as a whole, and CLI splits are joined by the CLI and checked against the manifest's whole-file SHA-256.
 - Listings are cached for 5 minutes while browsing: with CLI 1.2.1 the first full `ls` on 106,000 files took 12.1 s (0.12 took 24.6 s on the same account) and later ones about 0.5 s / 2 requests. Startup asks the CLI for a fresh listing, which its own cache makes fast, so the window never waits on a stale saved copy. The last few listings are still saved on disk for navigation and to keep the root visible after a transfer; uploads mark that cache stale instead of deleting it.
 - **Recuerdos:** O2's own **Momentos**, **Lugares** (on an OpenStreetMap map by default, or as a list; the choice is remembered) and **Personas**, each opening as a virtual folder of its photos. A moment or place can play as a slideshow (5 s per photo, keyboard controls, optional CC0 music) and places show their photo count on the map.
-- **Biblioteca:** O2's **Música** and **Documentos** lists, wherever the files live. Música shows every song or, with «Carpetas», one entry per folder holding songs; a folder plays through its own songs. Songs stream from O2's signed links with a player (previous, next, seek, media keys); documents open/download like any file. Uploads from these views go to the root, where O2 files them by kind.
+- **Biblioteca:** O2's **Música** and **Documentos** lists, wherever the files live. Música shows every song or, with «Carpetas», one entry per folder holding songs (by its name, with where it is beside it, and a ▶ to play it); a folder plays through its own songs. Songs in any folder play in the app too (double click, Enter or ▶), going through that folder's songs; O2 doesn't treat `.flac` or `.ogg` as music, so those only download. Songs stream from O2's signed links with a player (previous, next, seek, media keys); documents open/download like any file. Uploads from these views go to the root, where O2 files them by kind.
 - **Upload conflicts:** when O2 already has the same name with another size, the app shows both sizes and dates and asks, per file, whether to overwrite (the old copy goes to O2's trash) or skip, instead of silently creating `name (1)`.
 - **Accessibility:** dialogs trap focus and are announced, notifications are live regions, primary buttons keep 5.9:1 contrast, and the key views were checked with axe-core with no violations left.
 - **Virtual "Cámara" folder**: groups photos/videos by year at the UI level without moving anything in O2. Obvious non-camera media (screenshots, WhatsApp, Telegram, screen recordings, wallpapers) stays in the root.
@@ -203,8 +203,10 @@ builds macOS universal, Windows x64 and Linux x64, bundles the pinned `o2cloud`
 1.4.2 CLI, and uploads `SHA256SUMS.txt`. Review the draft, verify the
 checksums and smoke-test the installers before publishing it.
 
-These artifacts are **not code-signed**: macOS is ad-hoc signed but not
-notarized, and Windows/Linux are unsigned. Gatekeeper and SmartScreen will warn
+These artifacts are **not code-signed** with Apple or Windows certificates:
+macOS is signed with the project's own self-signed certificate (so the Photos
+permission survives updates) but not notarized, and Windows/Linux are
+unsigned. Gatekeeper and SmartScreen will warn
 on other machines. This is intentional for a free personal project; manual
 downloads work after confirming the prompt.
 
@@ -343,7 +345,7 @@ stdout; progress stays on stderr.
 - Chunked files are visible as parts in the O2 web/app. Do not rename or delete individual parts.
 - Downloading a folder again downloads the parts of files the app once uploaded in `.o2part` parts again: after each run they are joined and removed, so the CLI doesn't find them. Everything else already there is skipped.
 - The Photos view loads pages of 300 and requests thumbnails for the visible rows; counting the library for the summary walks every asset, so the first «Fotos y vídeos» page takes about 1–2 minutes with 52,000 items. An iCloud download can be cancelled, and the app checks for the original's size plus 128 MB of free space before downloading it.
-- Photos permission is tied to the app's code signature. An ad-hoc development build may ask for it again after a rebuild, and so may an update installed from the app.
+- Photos permission is tied to the app's code signature. Release builds from 0.2.7 share one (the project's self-signed certificate), so updates keep it; until 0.2.6 they were ad-hoc signed and each update lost it, and their hardened runtime lacked the Photos entitlement. An ad-hoc development build (`app.sh`) may still ask again after a rebuild.
 - Hashing non-media files before upload is opt-in. It reads each selected file once, applies to individual files (folders keep the name+size check) and, when the selection has no media, uses the shared library instead of a whole-account scan.
 - The shared library lives in `/.o2cloud-gui/library/` inside the O2 account. The app hides that folder, but the O2 web UI shows it and its snapshot files. Do not delete it there unless you are willing to lose the shared hashes; the app recreates the folder but not the old snapshots. The `-gui` suffix keeps the plain `.o2cloud` name free for the official app.
 - Matching against files that are not in the library yet uses a whole-account listing (`ls -a`): about 5.6 s the first time and 0.3 s after that with CLI 0.12, and the app caches it for 5 minutes.
@@ -353,7 +355,7 @@ stdout; progress stays on stderr.
 - The conflict dialog lists every duplicate and lets each file be skipped or uploaded separately.
 - Each upload batch writes a small snapshot with just its own entries. After 8 own snapshots the app publishes a full one and removes the old deltas, which are moved to the O2 trash.
 - Syncing the library between two physical Macs has not been tested end to end yet.
-- The macOS build is ad-hoc signed, not notarized. For personal use it runs locally; distributing it requires an Apple Developer ID. Release builds are ad-hoc signed too, so Gatekeeper warns on other Macs.
+- The macOS build is not notarized. Local `app.sh` builds are ad-hoc signed; release builds use the project's self-signed certificate. Either way Gatekeeper warns on other Macs; notarization would need an Apple Developer ID.
 - The Windows installers are not code-signed. SmartScreen may warn; for personal use, build from source or use the unsigned installer. Release builds are unsigned as well.
 - Linux release packages are unsigned. The Linux CLI is built from source in CI (1.4.2) so it runs on Ubuntu 22.04 and later; the official 0.13.3+ Linux binary needs GLIBC 2.39 and runs on Ubuntu 24.04 and later.
 - macOS ARM64 is the main tested target. Windows x86_64 builds, its unit tests pass and the main flows were tested against a real O2 account; very large chunked transfers, cancellation/resume and session expiry still need a Windows run. Linux x86_64 builds and runs under WSL2, but uploads/downloads, the CLI login window and native desktop packaging still need a Linux run. The CLI publishes macOS, Linux x86_64 and Windows x86_64 binaries (no Linux ARM64).
@@ -375,8 +377,7 @@ that opens Settings. Next:
 - Stable/beta channels, and keeping the previous version for a rollback.
 - Verify that the new version can still list files before switching to it.
 - Test: an update on Windows and Linux (NSIS, MSI, AppImage, `.deb`), offline
-  and interrupted downloads, a bad signature, and the Photos permission on
-  macOS after an update (the ad-hoc signature changes with each build).
+  and interrupted downloads, and a bad signature.
 
 ### File previews
 

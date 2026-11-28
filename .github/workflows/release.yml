@@ -68,13 +68,19 @@ jobs:
           print(f"Releasing {expected}")
           PY
 
-      - name: Check the updater signing key
+      - name: Check the signing secrets
         env:
           KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+          MACOS_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
         run: |
           if [ -z "$KEY" ] || [ -z "$PASSWORD" ]; then
             echo "::error::Set the TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD secrets (see RELEASING.md)."
+            exit 1
+          fi
+          if [ -z "$MACOS_CERTIFICATE" ] || [ -z "$MACOS_PASSWORD" ]; then
+            echo "::error::Set the MACOS_SIGNING_CERTIFICATE and MACOS_SIGNING_CERTIFICATE_PASSWORD secrets (see RELEASING.md)."
             exit 1
           fi
 
@@ -228,9 +234,35 @@ jobs:
             src-tauri/bin/linux-x86_64/o2cloud
           src-tauri/bin/linux-x86_64/o2cloud --version
 
-      - name: Configure ad-hoc signing (macOS)
+      # The app is signed with the project's own self-signed certificate,
+      # not ad hoc: macOS ties the Photos permission to the signature, and
+      # an ad-hoc one changes with every build, so each update lost it.
+      # Gatekeeper still warns (it isn't notarized). Imported here rather
+      # than through APPLE_CERTIFICATE, which Tauri only accepts from Apple.
+      - name: Import the macOS signing certificate
         if: matrix.platform == 'macos-latest'
-        run: echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+        env:
+          CERTIFICATE: ${{ secrets.MACOS_SIGNING_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_SIGNING_CERTIFICATE_PASSWORD }}
+          IDENTITY: O2 Cloud self-signed (dcarnicer)
+        run: |
+          set -euo pipefail
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -base64 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          printf '%s' "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" \
+            -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/signing.p12"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$password" "$keychain" > /dev/null
+          # codesign looks for the identity in the user's keychains.
+          security list-keychains -d user -s "$keychain" \
+            $(security list-keychains -d user | tr -d '"')
+          security find-identity -p codesigning "$keychain" | grep -F "\"$IDENTITY\""
+          echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: npm ci

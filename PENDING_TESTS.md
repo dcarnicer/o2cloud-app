@@ -539,6 +539,33 @@ los tres como `source: "file"`. En la repetición,
       (sección 19). El aviso de CLI nueva de la 0.2.4+ también funcionó con
       una versión real: instaló la 1.4.2 desde Ajustes.
 
+### 21. Firma propia en macOS, permiso de Fotos y música — 0.2.7 (28 nov 2026)
+
+- [x] Diagnóstico: tras el OTA a la 0.2.6, Fotos «denegado». La firma ad-hoc
+      tiene como requisito el `cdhash` de cada compilación, y TCC guarda el
+      permiso contra él; además las releases llevan hardened runtime
+      (`flags=adhoc,runtime`) sin el entitlement de fototeca, mientras que
+      `app.sh` (donde Fotos se probó en octubre) firma sin hardened runtime.
+- [x] `tccutil reset Photos es.dabi.o2cloud` ejecutado en el Mac (solo el
+      permiso de Fotos de esta app).
+- [x] Certificado autofirmado «O2 Cloud self-signed (dcarnicer)» (hasta 2036)
+      en `~/.tauri`, contraseña en el Llavero, secrets
+      `MACOS_SIGNING_CERTIFICATE(_PASSWORD)`. Prueba con una copia: firma
+      aunque no sea de confianza y el requisito queda `identifier
+      "es.dabi.o2cloud" and certificate leaf = H"…"`.
+- [x] Build release local (arm64) firmado como en CI, desde un llavero
+      temporal: `flags=0x10000(runtime)`, entitlement
+      `com.apple.security.personal-information.photos-library`, requisito
+      `identifier "es.dabi.o2cloud" and certificate leaf = H"c3dcfb53…"`, y
+      `codesign --verify --deep --strict` correcto. Llavero y build borrados.
+- [ ] 0.2.7 instalada (por OTA desde la 0.2.6): conceder Fotos una vez; ver
+      la biblioteca y subir un vídeo pequeño desde Fotos.
+- [ ] Con la 0.2.8 o una build posterior: el permiso de Fotos sigue concedido.
+- [ ] Música: carpetas con 💿, nombre propio y «N canciones · ruta», ▶ en la
+      fila; en Ubicaciones, doble clic en una canción la reproduce y
+      siguiente/anterior siguen en esa carpeta; un `.flac` explica que hay
+      que descargarlo.
+
 ## Cómo limpiar después de una prueba
 
 - Borrar el archivo o la carpeta de prueba de O2.

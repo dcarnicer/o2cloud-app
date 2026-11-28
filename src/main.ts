@@ -809,6 +809,7 @@ function openVirtualFolder(folder: VirtualFolder) {
 
 /** A moment's name with its day as people read it ("… · 26 nov 2026"). */
 function folderTitle(folder: VirtualFolder): string {
+  if (folder.kind === "music-folder") return lastSegment(folder.name);
   const day = folder.date?.slice(0, 10);
   if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return folder.name;
   return `${folder.name} · ${new Date(`${day}T12:00:00`).toLocaleDateString("es-ES", { dateStyle: "medium" })}`;
@@ -872,7 +873,13 @@ function visibleEntries(): Entry[] {
   const matches = (name: string) => !needle || normalize(name).includes(needle);
   const virtual: Entry[] = (listing.virtual_folders ?? [])
     .filter((v) => matches(v.name))
-    .map((folder): Entry => ({ kind: "virtual", key: `virtual:${folder.key}`, name: folder.name, folder }));
+    .map((folder): Entry => ({
+      kind: "virtual",
+      key: `virtual:${folder.key}`,
+      // A folder of Música by its own name; its path is shown beside it.
+      name: folder.kind === "music-folder" ? lastSegment(folder.name) : folder.name,
+      folder,
+    }));
   const folders: Entry[] = listing.folders
     .filter((f) => matches(f.name))
     .map((folder): Entry => ({ kind: "folder", key: `folder:${folder.id}`, name: folder.name, folder }))
@@ -885,7 +892,7 @@ function visibleEntries(): Entry[] {
   let entries = [...virtual, ...folders, ...files];
   // Música shows its songs or its folders, not both.
   if (currentCrumb().virtual === "media:music") {
-    entries = musicView === "folders" ? virtual : files;
+    entries = musicView === "folders" ? virtual.sort(compareEntries) : files;
   }
   entriesCache = { listing, signature, entries };
   return entries;
@@ -912,6 +919,7 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const ICON_PATHS = {
   download: "M12 4v11m0 0-4-4m4 4 4-4M5 19h14",
   trash: "M4 7h16M10 11v6m4-6v6M9 7V5h6v2M6 7l1 12h10l1-12",
+  play: "M8 5.5v13l10.5-6.5z",
 };
 
 function svgIcon(name: keyof typeof ICON_PATHS): SVGSVGElement {
@@ -930,17 +938,29 @@ function svgIcon(name: keyof typeof ICON_PATHS): SVGSVGElement {
 }
 
 const VIDEO_NAME = /\.(mov|mp4|m4v|3gp|3g2|avi|mkv|webm|mts|m2ts|mpe?g|wmv|flv)$/i;
+const AUDIO_NAME = /\.(mp3|m4a|flac|wav|aac|ogg|opus|aiff?)$/i;
+
+/** A song the player may stream (whole, not in parts). */
+function isAudio(file: LogicalFile): boolean {
+  return AUDIO_NAME.test(file.name) && !file.chunked;
+}
+
+/** The last part of a path: `musica/Queen/Live` → `Live`. */
+function lastSegment(path: string): string {
+  return path.split("/").filter(Boolean).pop() ?? path;
+}
 
 const FILE_ICONS: [RegExp, string][] = [
   [/\.(jpe?g|png|heic|heif|gif|webp|tiff?|bmp|dng|raw|cr[23]|nef|arw|avif)$/i, "🖼️"],
   [VIDEO_NAME, "🎬"],
-  [/\.(mp3|m4a|flac|wav|aac|ogg|opus|aiff?)$/i, "🎵"],
+  [AUDIO_NAME, "🎵"],
   [/\.(zip|rar|7z|tar|gz|tgz|bz2|xz|dmg|iso)$/i, "🗜️"],
   [/\.pdf$/i, "📕"],
 ];
 
 function entryIcon(entry: Entry): string {
   if (entry.kind === "virtual") {
+    if (entry.folder.kind === "music-folder") return "💿";
     return entry.folder.kind === "camera" ? "📷" : entry.folder.kind === "year" ? "🗓️" : "🗂️";
   }
   if (entry.kind === "folder") return "📁";
@@ -1009,15 +1029,23 @@ function renderRow(entry: Entry): HTMLTableRowElement {
   const name = document.createElement("span");
   name.className = "name-text";
   name.textContent = entry.name;
-  name.title = entry.name;
+  name.title = entry.kind === "virtual" ? entry.folder.name : entry.name;
   wrap.append(icon, name);
-  if (entry.kind === "virtual" || (entry.kind === "folder" && entry.folder.files > 0)) {
+  const musicFolderRow = entry.kind === "virtual" && entry.folder.kind === "music-folder";
+  if (musicFolderRow) {
+    // «12 canciones · musica/Queen»: where it is, under its own name.
+    const meta = document.createElement("span");
+    meta.className = "name-meta";
+    const parent = entry.folder.name.split("/").slice(0, -1).join("/");
+    meta.textContent = plural(entry.folder.files, "canción", "canciones") + (parent ? ` · ${parent}` : "");
+    wrap.appendChild(meta);
+  } else if (entry.kind === "virtual" || (entry.kind === "folder" && entry.folder.files > 0)) {
     const meta = document.createElement("span");
     meta.className = "name-meta";
     meta.textContent = plural(entry.folder.files, "archivo", "archivos");
     wrap.appendChild(meta);
   }
-  if (entry.kind === "virtual") {
+  if (entry.kind === "virtual" && !musicFolderRow) {
     const pill = document.createElement("span");
     pill.className = "pill";
     if (entry.folder.kind.startsWith("label")) {
@@ -1051,7 +1079,19 @@ function renderRow(entry: Entry): HTMLTableRowElement {
   const actionsCell = cell("col-actions");
   const actions = document.createElement("div");
   actions.className = "row-actions";
+  if (musicFolderRow) {
+    const folder = entry.folder.key.slice(MUSIC_FOLDER.length);
+    actions.appendChild(
+      makeAction("play", `Reproducir ${entry.name}`, () =>
+        void playSource({ kind: "music-folder", folder }),
+      ),
+    );
+  }
   if (entry.kind === "file") {
+    if (inMusic() || isAudio(entry.file)) {
+      const file = entry.file;
+      actions.appendChild(makeAction("play", "Reproducir", () => void playFile(file)));
+    }
     actions.appendChild(makeAction("download", "Descargar", () => void downloadFiles([entry.file])));
   }
   if (entry.kind !== "virtual") {
@@ -1209,7 +1249,10 @@ function renderLabelViews() {
   for (const button of document.querySelectorAll<HTMLButtonElement>("#music-toggle button")) {
     button.setAttribute("aria-pressed", String(button.dataset.view === musicView));
   }
-  $("#play-music-btn").classList.toggle("hidden", !inMusic() || !state.listing?.files.length);
+  const playable = inMusic()
+    ? !!state.listing?.files.length
+    : !!state.listing?.files.some(isAudio);
+  $("#play-music-btn").classList.toggle("hidden", !playable);
   // Nothing goes into a moment or place (O2 makes them), and none of these
   // views is a folder to create one in. Música and Documentos take uploads:
   // they go to O2 Cloud's root, and O2 files them there by their kind.
@@ -1614,8 +1657,14 @@ function slideshowKey(event: KeyboardEvent): boolean {
 let allTracks: Track[] = [];
 /** What the player goes through: every song, or one folder's. */
 let tracks: Track[] = [];
-/** The folder `tracks` are from (null: every song). */
-let tracksFolder: string | null = null;
+
+/** Where the player's songs come from: every song, one of Música's
+ * folders, or the songs of a folder view (by ID, in its order). */
+type TrackSource =
+  | { kind: "all" }
+  | { kind: "music-folder"; folder: string }
+  | { kind: "ids"; ids: number[] };
+let trackSource: TrackSource = { kind: "all" };
 
 /** The folder a song is in, from its path (`/a/b/x.mp3` → `/a/b`). */
 function folderOfPath(path: string | null): string {
@@ -1623,8 +1672,35 @@ function folderOfPath(path: string | null): string {
   return at <= 0 ? "/" : path!.slice(0, at);
 }
 
-function tracksIn(folder: string | null): Track[] {
-  return folder === null ? allTracks : allTracks.filter((t) => folderOfPath(t.path) === folder);
+function tracksFor(source: TrackSource): Track[] {
+  if (source.kind === "all") return allTracks;
+  if (source.kind === "music-folder") {
+    return allTracks.filter((t) => folderOfPath(t.path) === source.folder);
+  }
+  const byId = new Map(allTracks.map((t) => [t.id, t]));
+  return source.ids.flatMap((id) => byId.get(id) ?? []);
+}
+
+/** The songs on screen now: all of Música, one of its folders, or those of
+ * the folder open. */
+function currentTrackSource(): TrackSource {
+  const folder = musicFolder();
+  if (folder !== null) return { kind: "music-folder", folder };
+  if (inMusic()) return { kind: "all" };
+  const ids = visibleEntries().flatMap((entry) =>
+    entry.kind === "file" && isAudio(entry.file) && entry.file.normal_id !== null
+      ? [entry.file.normal_id]
+      : [],
+  );
+  return { kind: "ids", ids };
+}
+
+/** Play a whole source from its first song (a folder of Música's ▶). */
+async function playSource(source: TrackSource) {
+  trackSource = source;
+  tracks = tracksFor(source);
+  if (!tracks.length && !(await loadTracks())) return;
+  playTrack(0);
 }
 let trackIndex = -1;
 /** The song whose link was asked for again (once per song, until it
@@ -1662,16 +1738,24 @@ async function loadTracks(): Promise<boolean> {
     toast(String(error), "error");
     return false;
   }
-  tracks = tracksIn(tracksFolder);
-  if (!tracks.length) toast("No hay música que reproducir.", "info");
+  tracks = tracksFor(trackSource);
+  if (!tracks.length) {
+    toast(
+      trackSource.kind === "ids"
+        ? "O2 no trata estas canciones como música (por ejemplo .flac u .ogg), así que no se pueden escuchar aquí. Descárgalas para oírlas."
+        : "No hay música que reproducir.",
+      "info",
+      8000,
+    );
+  }
   return tracks.length > 0;
 }
 
 /** Play `file` (a row of Música), or the selection, or from the first. */
 async function playFile(file?: LogicalFile) {
   // It plays through what's on screen: one folder's songs, or all of them.
-  tracksFolder = musicFolder();
-  tracks = tracksIn(tracksFolder);
+  trackSource = currentTrackSource();
+  tracks = tracksFor(trackSource);
   const id = file?.normal_id ?? null;
   // A song uploaded since the list was fetched: fetch it again.
   const known = id === null ? tracks.length > 0 : tracks.some((t) => t.id === id);
@@ -1682,7 +1766,13 @@ async function playFile(file?: LogicalFile) {
   }
   const index = id === null ? 0 : tracks.findIndex((t) => t.id === id);
   if (index < 0) {
-    toast("Esta canción aún no se puede reproducir. Prueba en unos segundos.", "info");
+    toast(
+      inMusic()
+        ? "Esta canción aún no se puede reproducir. Prueba en unos segundos."
+        : "O2 no trata este archivo como música (por ejemplo .flac u .ogg), o lo acabas de subir. Descárgalo para oírlo, o prueba en unos segundos.",
+      "info",
+      8000,
+    );
     return;
   }
   playTrack(index);
@@ -1917,14 +2007,14 @@ function updateSelection() {
 function openEntry(entry: Entry) {
   if (entry.kind === "virtual") openVirtualFolder(entry.folder);
   else if (entry.kind === "folder") openFolder(entry.folder);
-  else if (inMusic()) void playFile(entry.file);
+  else if (inMusic() || isAudio(entry.file)) void playFile(entry.file);
   else void downloadFiles([entry.file]);
 }
 
 /** Enter: open a single selected folder, or download the selected files. */
 function openSelection() {
   const entries = selectedEntries();
-  if (inMusic() && entries.length && entries[0].kind === "file") {
+  if (entries.length && entries[0].kind === "file" && (inMusic() || isAudio(entries[0].file))) {
     void playFile(entries[0].file);
     return;
   }
@@ -2008,7 +2098,7 @@ function selectionMenu(): MenuEntry[] {
     const folder = entries[0];
     items.push({ label: "Abrir", hint: "↩", run: () => openEntry(folder) });
   }
-  if (files.length === 1 && inMusic()) {
+  if (files.length === 1 && (inMusic() || isAudio(files[0].file))) {
     items.push({ label: "Reproducir", hint: "↩", run: () => void playFile(files[0].file) });
   }
   const folders = entries.length - files.length;

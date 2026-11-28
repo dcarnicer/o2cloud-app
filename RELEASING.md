@@ -16,9 +16,15 @@ Unsigned builds are the accepted default. This is a free personal project and
 does not buy code-signing certificates or notarization. Do not block a release
 on signing.
 
-macOS is ad-hoc signed; Windows and Linux are unsigned. Keep the warning and
-the bypass instructions in the release body. Signing is optional future work,
-not a release requirement.
+macOS is signed with the project's own self-signed certificate (free, not
+from Apple, not notarized); Windows and Linux are unsigned. Keep the warning
+and the bypass instructions in the release body. Signing with Apple or
+Authenticode certificates is optional future work, not a release requirement.
+
+The self-signed certificate is not about Gatekeeper, which warns all the same:
+macOS ties the Photos permission to the app's signature, and an ad-hoc one
+changes with every build, so each update lost it. See
+[The macOS signing certificate](#the-macos-signing-certificate).
 
 The in-app updater does not wait for code signing. Its updates are signed with
 the app's own updater key (minisign, free), and the app refuses anything not
@@ -95,7 +101,10 @@ Optional macOS universal smoke test:
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
 # The repo tracks the arm64 CLI; CI downloads both. To test locally, place the
 # Intel CLI at src-tauri/bin/macos-x86_64/o2cloud too.
-APPLE_SIGNING_IDENTITY=- \
+# Sign as CI does: import the certificate into a keychain in the search list
+# (see "The macOS signing certificate"), or use APPLE_SIGNING_IDENTITY=- for
+# an ad-hoc build that loses the Photos permission on every rebuild.
+APPLE_SIGNING_IDENTITY="O2 Cloud self-signed (dcarnicer)" \
   npm run tauri build -- --target universal-apple-darwin --bundles app,dmg
 ```
 
@@ -321,8 +330,10 @@ This is optional and is not required for a release. When an Apple Developer ID
 is available:
 
 1. Add the signing secrets to the repository.
-2. Replace the ad-hoc step (`APPLE_SIGNING_IDENTITY=-`) with the real identity
-   and notarization variables.
+2. Replace the "Import the macOS signing certificate" step with Tauri's own
+   `APPLE_CERTIFICATE`/`APPLE_SIGNING_IDENTITY` and the notarization
+   variables. A new certificate changes the app's signature, so users grant
+   the Photos permission once more.
 3. Remove the macOS unsigned warning from `.github/release-body.md`.
 4. Test the notarized `.dmg` on a clean Mac.
 
@@ -331,6 +342,44 @@ remove the Windows unsigned warning. Linux packages can be signed separately.
 
 The in-app updater keeps working with code signing; it only needs its own
 key (below).
+
+## The macOS signing certificate
+
+Release builds for macOS are signed with a self-signed code-signing
+certificate, «O2 Cloud self-signed (dcarnicer)», valid until 2036. Its
+signature requirement is `identifier "es.dabi.o2cloud" and certificate leaf =
+H"c3dcfb53…"`, the same for every build, so the Photos permission survives
+updates (an ad-hoc signature is the build's hash). The hardened runtime is on,
+and `src-tauri/Entitlements.plist` declares the Photos library access it
+needs.
+
+- Certificate and key: `~/.tauri/o2cloud-app-macos-signing.p12` (and the
+  certificate alone as `.cert.pem`) on the release Mac. The password is in the
+  Keychain as «O2 Cloud macOS signing certificate password» (service
+  `o2cloud-app macOS signing certificate password`).
+- CI reads `MACOS_SIGNING_CERTIFICATE` (the `.p12` in base64) and
+  `MACOS_SIGNING_CERTIFICATE_PASSWORD`, imports them into a temporary keychain
+  and signs with `APPLE_SIGNING_IDENTITY`. Not `APPLE_CERTIFICATE`: Tauri only
+  takes Apple certificates from it. `create-release` fails at once if either
+  secret is missing.
+- **Keep a backup** with the updater key. A new certificate means a new
+  signature: everyone grants the Photos permission once more.
+
+To set the secrets again:
+
+```bash
+base64 -i ~/.tauri/o2cloud-app-macos-signing.p12 | tr -d '\n' \
+  | gh secret set MACOS_SIGNING_CERTIFICATE
+security find-generic-password -s "o2cloud-app macOS signing certificate password" -w \
+  | tr -d '\n' | gh secret set MACOS_SIGNING_CERTIFICATE_PASSWORD
+```
+
+Check a build's signature (step 7):
+
+```bash
+codesign -d -r- "/Volumes/O2 Cloud/O2 Cloud.app"     # … certificate leaf = H"c3dcfb53…"
+codesign -d --entitlements - "/Volumes/O2 Cloud/O2 Cloud.app"   # photos-library
+```
 
 ## The updater signing key
 
