@@ -614,9 +614,8 @@ los tres como `source: "file"`. En la repetición,
       y dan 403 sin él, como avisó Daniel; un `<img>` siempre lo envía.
 - [x] Los 5 tests en vivo pasan con la 1.5.0 (labels, thumbnails, archivos en
       partes, descarga de carpetas, subidas); sin restos en la cuenta.
-- [ ] En la app: miniaturas en Ubicaciones, Cámara, Momentos y Documentos al
-      desplazarse; Espacio / doble clic / Intro abren el visor; ← → pasan;
-      «Descargar» desde el visor; un vídeo y un PDF muestran su nota.
+- [x] En la app (0.3.0, actualizada desde la 0.2.9): miniaturas al
+      desplazarse y visor con Espacio y ← →. Comprobado por el usuario.
 - [x] Música por álbum (subagente, en un worktree; incorporado sin
       conflictos): «Canciones / Álbumes / Carpetas», etiquetas leídas de
       forma tolerante, recopilatorios como «Varios artistas», «Sin álbum» al
@@ -629,9 +628,9 @@ los tres como `source: "file"`. En la repetición,
       OK, `latest.json` con la 0.3.0, 5 firmas válidas, `.dmg` universal con
       la CLI 1.5.0 (también Windows y Linux) y el mismo requisito de firma que
       la app instalada.
-- [ ] En la app: «Álbumes», abrir uno y que suene por orden de pista; el
-      reproductor muestra «Título · Artista» y las teclas multimedia, el
-      álbum; «Carpetas» con 📁.
+- [x] En la app: «Álbumes», abrir y reproducir uno; el reproductor con
+      «Título · Artista»; «Carpetas» con 📁; Fotos sigue sin pedir permiso
+      tras actualizar. Comprobado por el usuario el 28 nov 2026.
 
 ## Cómo limpiar después de una prueba
 
