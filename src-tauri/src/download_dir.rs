@@ -310,6 +310,25 @@ pub async fn join_app_parts(manifest_path: &Path) -> Result<bool, String> {
         return Err(format!("ya hay un {base} de otro tamaño"));
     }
 
+    // Parts the size of the CLI's own (4000 MiB; the app used 3500) would
+    // have been joined by the CLI as `name.o2part`: check that one instead.
+    let joined_by_cli = dir.join(format!("{base}.o2part"));
+    if !parts.iter().any(|p| p.exists())
+        && tokio::fs::metadata(&joined_by_cli)
+            .await
+            .is_ok_and(|m| m.len() == manifest.size)
+    {
+        if !transfer::sha256_file(&joined_by_cli)
+            .await?
+            .eq_ignore_ascii_case(&manifest.sha256)
+        {
+            return Err("el SHA-256 del archivo unido no coincide".into());
+        }
+        transfer::move_into_place(&joined_by_cli, &dest).await?;
+        let _ = tokio::fs::remove_file(manifest_path).await;
+        return Ok(true);
+    }
+
     let partial = transfer::partial_path(&dest);
     let result: Result<(), String> = async {
         let mut out = tokio::fs::File::create(&partial)
@@ -455,6 +474,15 @@ mod tests {
         assert_eq!(join_app_parts(&manifest).await, Ok(false));
         assert!(!manifest.exists() && !dir.join("done.bin.o2part.001").exists());
 
+        // Parts the CLI took for its own and joined as `name.o2part`.
+        let manifest = manifest_for(&dir, "cli.bin", &[b"1234", b"56"]);
+        std::fs::remove_file(dir.join("cli.bin.o2part.001")).unwrap();
+        std::fs::remove_file(dir.join("cli.bin.o2part.002")).unwrap();
+        std::fs::write(dir.join("cli.bin.o2part"), b"123456").unwrap();
+        assert_eq!(join_app_parts(&manifest).await, Ok(true));
+        assert_eq!(std::fs::read(dir.join("cli.bin")).unwrap(), b"123456");
+        assert!(!manifest.exists() && !dir.join("cli.bin.o2part").exists());
+
         // A part name that leaves the folder is refused.
         let manifest = manifest_for(&dir, "evil.bin", &[b"1"]);
         let mut m: ChunkManifest =
@@ -467,5 +495,125 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `download-dir` against a real account, read as the app reads it, then
+    /// the app's parts joined. Run with `O2CLOUD_LIVE_CLI=<o2cloud 1.4.2+>
+    /// cargo test live_download_dir -- --ignored --nocapture`. It works in a
+    /// folder `/o2app-live-dl` it creates and moves to O2's trash.
+    #[tokio::test]
+    #[ignore]
+    async fn live_download_dir() {
+        let Ok(cli) = std::env::var("O2CLOUD_LIVE_CLI") else {
+            panic!("set O2CLOUD_LIVE_CLI to the o2cloud binary");
+        };
+        let run = |args: &[&str], env: &[(&str, &str)]| {
+            let out = std::process::Command::new(&cli)
+                .args(args)
+                .envs(env.iter().copied())
+                .stdin(std::process::Stdio::null())
+                .output()
+                .unwrap();
+            (
+                out.status.code().unwrap_or(-1),
+                String::from_utf8_lossy(&out.stdout).into_owned(),
+                String::from_utf8_lossy(&out.stderr).into_owned(),
+            )
+        };
+        // The CLI joins parts of its own size; 100 bytes for this test.
+        let small_parts = [("O2CLOUD_PART_SIZE", "100")];
+        let tmp = std::env::temp_dir().join(format!("o2-live-dl-{}", std::process::id()));
+        let (src, out) = (tmp.join("src"), tmp.join("out"));
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::create_dir_all(&out).unwrap();
+
+        let (code, stdout, stderr) = run(&["mkdir", "-p", "/o2app-live-dl", "--json"], &[]);
+        assert_eq!(code, 0, "{stderr}");
+        let created: Value = cli::parse_json(&cli::CliOutput {
+            stdout,
+            stderr: String::new(),
+        })
+        .unwrap();
+        let folder = created["id"].as_u64().unwrap().to_string();
+
+        // A plain file, one with emoji (O2 drops them from the name), one the
+        // CLI splits, and one in the app's own parts with its manifest.
+        let split: Vec<u8> = (0..250u32).map(|i| (i % 251) as u8).collect();
+        let movie_parts: [&[u8]; 2] = [&[7u8; 64], &[9u8; 36]];
+        std::fs::write(src.join("a.txt"), b"hola").unwrap();
+        std::fs::write(src.join("emoji 😀.txt"), b"emoji").unwrap();
+        std::fs::write(src.join("split.bin"), &split).unwrap();
+        let manifest = manifest_for(&src, "movie.bin", &movie_parts);
+        let uploads = [
+            (src.join("a.txt"), false),
+            (src.join("emoji 😀.txt"), false),
+            (src.join("split.bin"), true),
+            (manifest, false),
+            (src.join("movie.bin.o2part.001"), false),
+            (src.join("movie.bin.o2part.002"), false),
+        ];
+        for (path, parts) in &uploads {
+            let path = path.to_string_lossy();
+            let env: &[(&str, &str)] = if *parts { &small_parts } else { &[] };
+            let (code, _, stderr) = run(&["upload", &path, "--folder", &folder, "--json"], env);
+            assert_eq!(code, 0, "{path}: {stderr}");
+        }
+
+        let target = out.to_string_lossy().into_owned();
+        let download = || {
+            let (code, stdout, stderr) = run(
+                &["download-dir", &folder, "-o", &target, "--json-lines"],
+                &small_parts,
+            );
+            let mut progress = Progress::default();
+            for line in stdout.lines() {
+                progress.take(line);
+            }
+            (code, progress, stderr)
+        };
+        // O2's folder listing takes a while to show new files.
+        let mut first = None;
+        for _ in 0..6 {
+            std::thread::sleep(std::time::Duration::from_secs(15));
+            let (code, progress, stderr) = download();
+            assert_eq!(code, 0, "{stderr}");
+            if progress.files_total == 6 {
+                first = Some(progress);
+                break;
+            }
+            println!("listed {} of 6 files; waiting", progress.files_total);
+        }
+        let first = first.expect("O2 never listed the 6 files");
+        println!("first: {first:?}");
+        assert!(first.started && first.failed.is_empty(), "{first:?}");
+        assert_eq!(first.files_done, 6);
+        assert_eq!(first.bytes_done(), first.bytes_total);
+        let local = out.join("o2app-live-dl");
+        assert_eq!(std::fs::read(local.join("a.txt")).unwrap(), b"hola");
+        assert_eq!(std::fs::read(local.join("split.bin")).unwrap(), split);
+        assert_eq!(first.manifests.len(), 1, "{first:?}");
+        for manifest in &first.manifests {
+            assert_eq!(join_app_parts(manifest).await, Ok(true));
+        }
+        assert_eq!(
+            std::fs::read(local.join("movie.bin")).unwrap(),
+            [movie_parts[0], movie_parts[1]].concat()
+        );
+        assert!(!local.join("movie.bin.o2part.001").exists());
+
+        // Again: what's there is skipped. The app's parts come down again
+        // (they were joined and removed) and only their leftovers go.
+        let (code, again, stderr) = download();
+        assert_eq!(code, 0, "{stderr}");
+        println!("again: {again:?}");
+        assert!(again.failed.is_empty(), "{again:?}");
+        assert!(again.skipped >= 3, "{again:?}");
+        for manifest in &again.manifests {
+            assert_eq!(join_app_parts(manifest).await, Ok(false));
+        }
+        assert!(!local.join("movie.bin.o2part.001").exists());
+
+        let _ = run(&["rm", "-r", "-y", "/o2app-live-dl"], &[]);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
