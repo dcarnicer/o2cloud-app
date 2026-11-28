@@ -625,6 +625,10 @@ los tres como `source: "file"`. En la repetición,
 - [x] Con los datos reales (`live_labels` y la 1.5.0): 914 canciones, 667 con
       artista, 567 con álbum, 558 con pista; 133 álbumes de 131 nombres; 347
       sin álbum (sobre todo pistas sueltas de `cubase/Audio` y de UVR).
+- [x] Release **v0.3.0** publicada el 28 nov 2026: jobs en verde, 13 assets
+      OK, `latest.json` con la 0.3.0, 5 firmas válidas, `.dmg` universal con
+      la CLI 1.5.0 (también Windows y Linux) y el mismo requisito de firma que
+      la app instalada.
 - [ ] En la app: «Álbumes», abrir uno y que suene por orden de pista; el
       reproductor muestra «Título · Artista» y las teclas multimedia, el
       álbum; «Carpetas» con 📁.
