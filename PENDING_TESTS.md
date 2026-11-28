@@ -601,8 +601,8 @@ los tres como `source: "file"`. En la repetición,
 - [x] Release **v0.2.9** publicada el 28 nov 2026: jobs en verde, 13 assets
       OK, `latest.json` con la 0.2.9, 5 firmas válidas, `.dmg` universal con
       la 1.4.3 y el mismo requisito de firma que la app instalada.
-- [ ] En la 0.2.9, Fotos marca `IMG_0112.MOV` y los demás vídeos grandes como
-      ya en O2.
+- [x] En la 0.2.9 (actualizada desde la app), Fotos marca `IMG_0112.MOV` como
+      ya en O2. Resuelto.
 
 ## Cómo limpiar después de una prueba
 
