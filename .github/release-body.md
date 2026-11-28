@@ -4,15 +4,21 @@ built with Tauri 2 and backed by
 
 ## Changes
 
-- **Fotos recognises big videos already in O2:** a video over 4 GB is stored
-  in parts, and the check across the whole account looked for it by name and
-  size among the parts only, so Fotos showed it as not uploaded. It now finds
-  it whole, as a folder view does. The same check avoids uploading such files
-  again from the disk.
-- Includes everything from 0.2.8 (CLI 1.4.3; updates keep the Photos
-  permission), 0.2.7 (Fotos works, songs play in any folder), 0.2.6
-  (download whole folders, Música by folder, Lugares on the map), 0.2.5
-  (in-app updates) and earlier.
+- **Previews:** photos, videos and PDFs show a thumbnail in the file list, and
+  Space, a double click or Enter opens a large preview (← → for the next and
+  previous one, «Descargar» to keep it). A video shows a still and a PDF its
+  first page. Asked for in
+  [o2cloud-cli#24](https://github.com/danielperez9430/o2cloud-cli/issues/24).
+- **Música by album:** «Canciones / Álbumes / Carpetas». Albums come from the
+  songs' tags, play in track order, and compilations show as «Varios
+  artistas». The player shows each song's title and artist, also on the
+  system's media controls.
+- **o2cloud CLI 1.5.0** bundled on macOS, Windows and Linux, and required: it
+  brings the thumbnails and the song tags
+  ([o2cloud-cli#64](https://github.com/danielperez9430/o2cloud-cli/issues/64)).
+- Includes everything from 0.2.x: in-app updates, Fotos keeping its
+  permission, download whole folders, songs playing in any folder, big videos
+  in parts recognised, Recuerdos, Pase and Biblioteca.
 
 ## Downloads
 

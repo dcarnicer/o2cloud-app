@@ -35,7 +35,7 @@ Files uploaded with older versions keep their `.o2part.NNN` + `.o2manifest.json`
 - Downloads go to `<name>.o2download` and are renamed into place only when complete; `.o2part` files are checked part by part and as a whole, and CLI splits are joined by the CLI and checked against the manifest's whole-file SHA-256.
 - Listings are cached for 5 minutes while browsing: with CLI 1.2.1 the first full `ls` on 106,000 files took 12.1 s (0.12 took 24.6 s on the same account) and later ones about 0.5 s / 2 requests. Startup asks the CLI for a fresh listing, which its own cache makes fast, so the window never waits on a stale saved copy. The last few listings are still saved on disk for navigation and to keep the root visible after a transfer; uploads mark that cache stale instead of deleting it.
 - **Recuerdos:** O2's own **Momentos**, **Lugares** (on an OpenStreetMap map by default, or as a list; the choice is remembered) and **Personas**, each opening as a virtual folder of its photos. A moment or place can play as a slideshow (5 s per photo, keyboard controls, optional CC0 music) and places show their photo count on the map.
-- **Biblioteca:** O2's **Música** and **Documentos** lists, wherever the files live. Música shows every song or, with «Carpetas», one entry per folder holding songs (by its name, with where it is beside it, and a ▶ to play it); a folder plays through its own songs. Songs in any folder play in the app too (double click, Enter or ▶), going through that folder's songs; O2 doesn't treat `.flac` or `.ogg` as music, so those only download. Songs stream from O2's signed links with a player (previous, next, seek, media keys); documents open/download like any file. Uploads from these views go to the root, where O2 files them by kind.
+- **Biblioteca:** O2's **Música** and **Documentos** lists, wherever the files live. Música shows every song, its **albums** (from the songs' tags: by album and artist, a compilation once as «Varios artistas», songs without an album tag under «Sin álbum»; an album plays in track order) or, with «Carpetas», one entry per folder holding songs (by its name, with where it is beside it, and a ▶ to play it); a folder plays through its own songs. The player shows each song's title and artist, also to the system's media controls. Songs in any folder play in the app too (double click, Enter or ▶), going through that folder's songs; O2 doesn't treat `.flac` or `.ogg` as music, so those only download. Songs stream from O2's signed links with a player (previous, next, seek, media keys); documents open/download like any file. Uploads from these views go to the root, where O2 files them by kind.
 - **Upload conflicts:** when O2 already has the same name with another size, the app shows both sizes and dates and asks, per file, whether to overwrite (the old copy goes to O2's trash) or skip, instead of silently creating `name (1)`.
 - **Accessibility:** dialogs trap focus and are announced, notifications are live regions, primary buttons keep 5.9:1 contrast, and the key views were checked with axe-core with no violations left.
 - **Virtual "Cámara" folder**: groups photos/videos by year at the UI level without moving anything in O2. Obvious non-camera media (screenshots, WhatsApp, Telegram, screen recordings, wallpapers) stays in the root.
@@ -407,11 +407,16 @@ Done in 0.2.6 (asked for in o2cloud-cli#24), with `download-dir`. Next:
 - Downloading a moment or place with `download-dir --label`.
 - Cancelling a folder download from the transfer row.
 
-### Música: by album
+### Música: next steps
 
-Música by folder is done in 0.2.6. By album and artist: the CLI only takes
-the duration from O2's metadata. Asked in o2cloud-cli#64 whether O2 keeps the
-album, artist and track number, and if so for the CLI to give them.
+By folder (0.2.6) and by album (0.3.0, with the tags CLI 1.5.0 gives,
+o2cloud-cli#64) are done. Next:
+
+- O2 keeps no album-artist tag, so albums are told apart by album and artist,
+  and a compilation is guessed (several artists, no repeated track number in
+  one folder). A two-disc compilation in one folder splits by artist, and one
+  album with a single «feat.» track shows as «Varios artistas».
+- A view by artist, and the genre.
 
 ### CLI split support: next steps
 

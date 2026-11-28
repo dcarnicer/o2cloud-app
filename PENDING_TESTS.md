@@ -617,6 +617,17 @@ los tres como `source: "file"`. En la repetición,
 - [ ] En la app: miniaturas en Ubicaciones, Cámara, Momentos y Documentos al
       desplazarse; Espacio / doble clic / Intro abren el visor; ← → pasan;
       «Descargar» desde el visor; un vídeo y un PDF muestran su nota.
+- [x] Música por álbum (subagente, en un worktree; incorporado sin
+      conflictos): «Canciones / Álbumes / Carpetas», etiquetas leídas de
+      forma tolerante, recopilatorios como «Varios artistas», «Sin álbum» al
+      final, orden por pista. Tests nuevos: `groups_music_by_album`,
+      `albums_without_tags`, `song_tags_read_leniently`.
+- [x] Con los datos reales (`live_labels` y la 1.5.0): 914 canciones, 667 con
+      artista, 567 con álbum, 558 con pista; 133 álbumes de 131 nombres; 347
+      sin álbum (sobre todo pistas sueltas de `cubase/Audio` y de UVR).
+- [ ] En la app: «Álbumes», abrir uno y que suene por orden de pista; el
+      reproductor muestra «Título · Artista» y las teclas multimedia, el
+      álbum; «Carpetas» con 📁.
 
 ## Cómo limpiar después de una prueba
 
