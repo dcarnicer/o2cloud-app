@@ -391,7 +391,7 @@ los tres como `source: "file"`. En la repetición,
 
 ### 16. CLI 1.2.2–1.3.1 — pendiente (27 nov 2026)
 
-- [ ] `live_cli` con 1.3.1: el caso de sobrescribir un archivo subido
+- [x] `live_cli` con 1.4.2 (sección 20): el caso de sobrescribir un archivo subido
       segundos antes debe pasar (CLI 1.2.2 espera a O2; la app trata los
       eventos `waiting` como actividad y no los confunde con un atasco).
       Pendiente: la sesión de O2 está caducada.
@@ -425,8 +425,8 @@ los tres como `source: "file"`. En la repetición,
 - [ ] Descargar un archivo troceado (`name.001`…) nada más subirlo, antes de
       que O2 lo liste (10–60 s): la descarga por ruta debe encontrarlo en vez
       de fallar con «Not found».
-- [ ] `live_cli` con 1.4.1 (incluye el caso de sobrescritura de la
-      sección 16).
+- [x] `live_cli` con 1.4.2 (sección 20), incluido el caso de sobrescritura de
+      la sección 16.
 - [x] Release **v0.2.2** publicada el 27 nov 2026: macOS universal
       `.dmg`/`.app.tar.gz`, Windows `.msi`/`.exe`, Linux `.deb`/`.AppImage`
       y `SHA256SUMS.txt`; las 6 sumas verificadas. El `.dmg` montado declara
@@ -510,11 +510,24 @@ los tres como `source: "file"`. En la repetición,
       parte dañada, ya unido, nombre de parte fuera de la carpeta).
 - [x] Música por carpeta: test de agrupación por ruta (raíz, subcarpetas,
       ocultas fuera).
-- [ ] Descargar una carpeta pequeña real (p. ej. `grlife`) y comprobar el
-      progreso, el aviso final y que repetirla dice «ya estaban».
-- [ ] Una carpeta con un archivo `.o2part` de la app: se une y se borran las
-      partes y el manifiesto; con un `name.001` del CLI, lo une el CLI.
-- [ ] Una carpeta con nombres con emoji (la 1.4.2 no los descarga otra vez).
+- [x] `live_download_dir` (nuevo, opt-in) contra la cuenta real con la CLI
+      1.4.2, el 28 nov 2026: en `/o2app-live-dl` sube un archivo normal, uno
+      con emoji, uno troceado por el CLI (`split.bin.001`…) y dos en partes
+      de la app con su manifiesto; `download-dir --json-lines` leído con
+      `Progress`: 8 de 8 sin fallos y bytes completos; contenido correcto byte
+      a byte y sin restos. La segunda vez salta 3 (también el del emoji) y
+      limpia las partes que vuelven a bajar. Carpeta de prueba a la papelera.
+- [x] Hallazgo: el CLI toma por suyas unas partes si la primera mide entre su
+      tamaño de parte y 64 bytes menos, y las baja unidas como
+      `name.o2part`. Con las de la app (3500 MiB frente a 4000 MiB) no pasa;
+      aun así la app verifica ese `name.o2part` con el manifiesto y lo
+      renombra. Cubierto en el test (un caso de cada).
+- [x] `live_cli` con 1.4.2: subida, conflicto, **sobrescribir un archivo
+      subido segundos antes** (`MED-1017`, pendiente desde 0.2.1), troceado,
+      partes de otra versión y eventos de progreso. `live_labels`: 121
+      momentos, 268 lugares, 0 personas, 914 canciones, 29.137 documentos.
+- [ ] Descargar una carpeta desde la app instalada (fila de transferencias y
+      aviso final).
 - [ ] Música «Carpetas»: abrir una, reproducir y que siguiente/anterior se
       queden en esa carpeta; la elección se recuerda al reiniciar.
 - [ ] Lugares abre en el mapa; con «Lista», al reiniciar sigue en lista.

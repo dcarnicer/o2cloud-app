@@ -341,6 +341,7 @@ stdout; progress stays on stderr.
 - O2's internal API is unofficial and can change without notice.
 - The virtual camera folder is a heuristic. It may include downloaded photos and excludes some unusual camera filenames. It is a UI view; the O2 web UI still shows everything at the root.
 - Chunked files are visible as parts in the O2 web/app. Do not rename or delete individual parts.
+- Downloading a folder again downloads the parts of files the app once uploaded in `.o2part` parts again: after each run they are joined and removed, so the CLI doesn't find them. Everything else already there is skipped.
 - The Photos view loads pages of 300 and requests thumbnails for the visible rows; counting the library for the summary walks every asset, so the first «Fotos y vídeos» page takes about 1–2 minutes with 52,000 items. An iCloud download can be cancelled, and the app checks for the original's size plus 128 MB of free space before downloading it.
 - Photos permission is tied to the app's code signature. An ad-hoc development build may ask for it again after a rebuild, and so may an update installed from the app.
 - Hashing non-media files before upload is opt-in. It reads each selected file once, applies to individual files (folders keep the name+size check) and, when the selection has no media, uses the shared library instead of a whole-account scan.

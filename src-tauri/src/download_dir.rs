@@ -302,17 +302,20 @@ pub async fn join_app_parts(manifest_path: &Path) -> Result<bool, String> {
         let _ = tokio::fs::remove_file(manifest_path).await;
     };
 
+    // Parts the CLI takes for its own (a first part up to 64 bytes under
+    // its part size, 4000 MiB; the app's were 3500 MiB) come down joined
+    // as `name.o2part`.
+    let joined_by_cli = dir.join(format!("{base}.o2part"));
+
     if let Ok(meta) = tokio::fs::metadata(&dest).await {
         if meta.len() == manifest.size {
             remove_parts().await;
+            let _ = tokio::fs::remove_file(&joined_by_cli).await;
             return Ok(false);
         }
         return Err(format!("ya hay un {base} de otro tamaño"));
     }
 
-    // Parts the size of the CLI's own (4000 MiB; the app used 3500) would
-    // have been joined by the CLI as `name.o2part`: check that one instead.
-    let joined_by_cli = dir.join(format!("{base}.o2part"));
     if !parts.iter().any(|p| p.exists())
         && tokio::fs::metadata(&joined_by_cli)
             .await
@@ -537,20 +540,28 @@ mod tests {
         let folder = created["id"].as_u64().unwrap().to_string();
 
         // A plain file, one with emoji (O2 drops them from the name), one the
-        // CLI splits, and one in the app's own parts with its manifest.
+        // CLI splits, and two in the app's own parts with their manifests:
+        // `clip.bin`'s first part is far from the CLI's part size, so it
+        // comes down in parts; `movie.bin`'s is within 64 bytes of it, so
+        // the CLI joins it as `movie.bin.o2part`.
         let split: Vec<u8> = (0..250u32).map(|i| (i % 251) as u8).collect();
         let movie_parts: [&[u8]; 2] = [&[7u8; 64], &[9u8; 36]];
+        let clip_parts: [&[u8]; 2] = [&[3u8; 30], &[4u8; 20]];
         std::fs::write(src.join("a.txt"), b"hola").unwrap();
         std::fs::write(src.join("emoji 😀.txt"), b"emoji").unwrap();
         std::fs::write(src.join("split.bin"), &split).unwrap();
-        let manifest = manifest_for(&src, "movie.bin", &movie_parts);
+        let movie = manifest_for(&src, "movie.bin", &movie_parts);
+        let clip = manifest_for(&src, "clip.bin", &clip_parts);
         let uploads = [
             (src.join("a.txt"), false),
             (src.join("emoji 😀.txt"), false),
             (src.join("split.bin"), true),
-            (manifest, false),
+            (movie, false),
             (src.join("movie.bin.o2part.001"), false),
             (src.join("movie.bin.o2part.002"), false),
+            (clip, false),
+            (src.join("clip.bin.o2part.001"), false),
+            (src.join("clip.bin.o2part.002"), false),
         ];
         for (path, parts) in &uploads {
             let path = path.to_string_lossy();
@@ -571,35 +582,54 @@ mod tests {
             }
             (code, progress, stderr)
         };
-        // O2's folder listing takes a while to show new files.
+        // O2's folder listing takes a while to show new files. 8 jobs:
+        // a.txt, the emoji file, split.bin, movie.bin.o2part, two clip parts
+        // and two manifests.
         let mut first = None;
         for _ in 0..6 {
             std::thread::sleep(std::time::Duration::from_secs(15));
             let (code, progress, stderr) = download();
             assert_eq!(code, 0, "{stderr}");
-            if progress.files_total == 6 {
+            if progress.files_total == 8 {
                 first = Some(progress);
                 break;
             }
-            println!("listed {} of 6 files; waiting", progress.files_total);
+            println!("listed {} of 8 files; waiting", progress.files_total);
         }
-        let first = first.expect("O2 never listed the 6 files");
+        let first = first.expect("O2 never listed the 8 files");
         println!("first: {first:?}");
         assert!(first.started && first.failed.is_empty(), "{first:?}");
-        assert_eq!(first.files_done, 6);
+        assert_eq!((first.files_done, first.downloaded), (8, 8));
         assert_eq!(first.bytes_done(), first.bytes_total);
         let local = out.join("o2app-live-dl");
         assert_eq!(std::fs::read(local.join("a.txt")).unwrap(), b"hola");
         assert_eq!(std::fs::read(local.join("split.bin")).unwrap(), split);
-        assert_eq!(first.manifests.len(), 1, "{first:?}");
+        assert_eq!(first.manifests.len(), 2, "{first:?}");
         for manifest in &first.manifests {
-            assert_eq!(join_app_parts(manifest).await, Ok(true));
+            assert_eq!(
+                join_app_parts(manifest).await,
+                Ok(true),
+                "{}",
+                manifest.display()
+            );
         }
         assert_eq!(
             std::fs::read(local.join("movie.bin")).unwrap(),
             [movie_parts[0], movie_parts[1]].concat()
         );
-        assert!(!local.join("movie.bin.o2part.001").exists());
+        assert_eq!(
+            std::fs::read(local.join("clip.bin")).unwrap(),
+            [clip_parts[0], clip_parts[1]].concat()
+        );
+        let mut left: Vec<String> = std::fs::read_dir(&local)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(
+            left,
+            ["a.txt", "clip.bin", "emoji .txt", "movie.bin", "split.bin"]
+        );
 
         // Again: what's there is skipped. The app's parts come down again
         // (they were joined and removed) and only their leftovers go.
@@ -607,11 +637,16 @@ mod tests {
         assert_eq!(code, 0, "{stderr}");
         println!("again: {again:?}");
         assert!(again.failed.is_empty(), "{again:?}");
-        assert!(again.skipped >= 3, "{again:?}");
+        assert_eq!(again.skipped, 3, "{again:?}");
         for manifest in &again.manifests {
             assert_eq!(join_app_parts(manifest).await, Ok(false));
         }
-        assert!(!local.join("movie.bin.o2part.001").exists());
+        let mut left_again: Vec<String> = std::fs::read_dir(&local)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left_again.sort();
+        assert_eq!(left_again, left);
 
         let _ = run(&["rm", "-r", "-y", "/o2app-live-dl"], &[]);
         let _ = std::fs::remove_dir_all(&tmp);
