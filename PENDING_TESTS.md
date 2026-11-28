@@ -598,6 +598,9 @@ los tres como `source: "file"`. En la repetición,
       carpeta. Test con el caso real y otro opt-in, `live_whole_files`, contra
       la cuenta: los 38 archivos en partes de la app se encuentran enteros
       (IMG_0112.MOV con 6.584.080.220 bytes; hasta 28 GB).
+- [x] Release **v0.2.9** publicada el 28 nov 2026: jobs en verde, 13 assets
+      OK, `latest.json` con la 0.2.9, 5 firmas válidas, `.dmg` universal con
+      la 1.4.3 y el mismo requisito de firma que la app instalada.
 - [ ] En la 0.2.9, Fotos marca `IMG_0112.MOV` y los demás vídeos grandes como
       ya en O2.
 
