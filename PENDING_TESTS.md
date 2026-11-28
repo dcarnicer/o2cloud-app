@@ -492,9 +492,9 @@ los tres como `source: "file"`. En la repetición,
       pública `releases/latest/download/latest.json` devuelve la 0.2.5.
 - [x] Instalada a mano en `/Applications` (una sola copia); arranca con la
       CLI 1.4.1 y lista la cuenta.
-- [ ] Con la 0.2.5 instalada y la 0.2.6 publicada: aviso al arrancar,
-      «Actualizar a 0.2.6 y reiniciar» descarga, instala y reinicia en la
-      0.2.6, sin una segunda copia en `/Applications`.
+- [x] **OTA real en macOS, 28 nov 2026:** la 0.2.5 instalada se actualizó
+      desde la app a la 0.2.6 y se reinició sola; en `/Applications` queda
+      solo la 0.2.6, con la firma (ad-hoc) válida, y lista la cuenta.
 - [ ] Con una subida en curso, el botón no actualiza y lo dice.
 - [ ] Tras actualizar en macOS: ¿vuelve a pedir el permiso de Fotos?
 - [ ] Windows (NSIS y MSI) y Linux (AppImage y `.deb`): la actualización usa
@@ -531,8 +531,13 @@ los tres como `source: "file"`. En la repetición,
 - [ ] Música «Carpetas»: abrir una, reproducir y que siguiente/anterior se
       queden en esa carpeta; la elección se recuerda al reiniciar.
 - [ ] Lugares abre en el mapa; con «Lista», al reiniciar sigue en lista.
-- [ ] OTA real: la 0.2.5 instalada ofrece la 0.2.6 al arrancar y se actualiza
-      sin dejar dos copias (sección 19).
+- [x] Release **v0.2.6** publicada el 28 nov 2026: todos los jobs en verde,
+      12 assets OK en `SHA256SUMS.txt`, `latest.json` con la 0.2.6 y sus 8
+      entradas a esta release, las 5 firmas válidas con la clave de la app,
+      `.dmg` universal con el CLI 1.4.2 (también en Windows y Linux).
+- [x] OTA real: la 0.2.5 instalada pasó a la 0.2.6 sin dejar dos copias
+      (sección 19). El aviso de CLI nueva de la 0.2.4+ también funcionó con
+      una versión real: instaló la 1.4.2 desde Ajustes.
 
 ## Cómo limpiar después de una prueba
 
