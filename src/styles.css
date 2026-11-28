@@ -2028,6 +2028,10 @@ h1.brand {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.player-artist {
+  font-weight: 400;
+  color: var(--muted);
+}
 .player-progress {
   display: flex;
   align-items: center;

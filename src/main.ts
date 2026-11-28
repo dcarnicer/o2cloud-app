@@ -84,6 +84,8 @@ interface VirtualFolder {
   location?: { lat: number; lon: number };
   /** A moment's day (ISO). */
   date?: string;
+  /** An album's artist, or «Varios artistas». */
+  artist?: string;
 }
 
 interface Track {
@@ -92,6 +94,14 @@ interface Track {
   path: string | null;
   duration: number | null;
   url: string;
+  /** Its tags (none from CLIs before 1.5.0). */
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  track: number | null;
+  genre: string | null;
+  /** Its album in Música: `media:music-album:<album_key>`. */
+  album_key: string;
 }
 
 interface Slide {
@@ -288,6 +298,10 @@ const PLACES_VIEW_STORAGE = "o2cloud.placesView";
 const MUSIC_VIEW_STORAGE = "o2cloud.musicView";
 /** Música's folders open as `media:music-folder:<folder>`. */
 const MUSIC_FOLDER = "media:music-folder:";
+/** Música's albums open as `media:music-album:<key>`. */
+const MUSIC_ALBUM = "media:music-album:";
+/** Música's songs with no album tag. */
+const NO_ALBUM = `${MUSIC_ALBUM}\u001f`;
 /** Folders created in this session that are known to be empty, with expiry. */
 const knownEmptyFolders = new Map<number, number>();
 const EMPTY_FOLDER_GRACE_MS = 2 * 60_000;
@@ -810,6 +824,8 @@ function openVirtualFolder(folder: VirtualFolder) {
 /** A moment's name with its day as people read it ("… · 26 nov 2026"). */
 function folderTitle(folder: VirtualFolder): string {
   if (folder.kind === "music-folder") return lastSegment(folder.name);
+  // Two «Greatest Hits» apart in the path too.
+  if (folder.kind === "music-album") return folder.artist ? `${folder.name} · ${folder.artist}` : folder.name;
   const day = folder.date?.slice(0, 10);
   if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return folder.name;
   return `${folder.name} · ${new Date(`${day}T12:00:00`).toLocaleDateString("es-ES", { dateStyle: "medium" })}`;
@@ -871,9 +887,9 @@ function visibleEntries(): Entry[] {
 
   const needle = normalize(state.filter.trim());
   const matches = (name: string) => !needle || normalize(name).includes(needle);
-  const virtual: Entry[] = (listing.virtual_folders ?? [])
-    .filter((v) => matches(v.name))
-    .map((folder): Entry => ({
+  const virtual: VirtualEntry[] = (listing.virtual_folders ?? [])
+    .filter((v) => matches(v.name) || (!!v.artist && matches(v.artist)))
+    .map((folder): VirtualEntry => ({
       kind: "virtual",
       key: `virtual:${folder.key}`,
       // A folder of Música by its own name; its path is shown beside it.
@@ -886,13 +902,23 @@ function visibleEntries(): Entry[] {
     .sort(compareEntries);
   const files: Entry[] = listing.files
     .filter((f) => matches(f.name))
-    .map((file): Entry => ({ kind: "file", key: fileKey(file), name: file.name, file }))
-    .sort(compareEntries);
+    .map((file): Entry => ({ kind: "file", key: fileKey(file), name: file.name, file }));
+  // An album keeps its own order: by track number.
+  const view = currentCrumb().virtual ?? "";
+  if (!view.startsWith(MUSIC_ALBUM)) files.sort(compareEntries);
 
   let entries = [...virtual, ...folders, ...files];
-  // Música shows its songs or its folders, not both.
-  if (currentCrumb().virtual === "media:music") {
-    entries = musicView === "folders" ? virtual.sort(compareEntries) : files;
+  // Música shows its songs, its albums or its folders: one at a time.
+  if (view === "media:music") {
+    const kind = musicView === "albums" ? "music-album" : "music-folder";
+    const noAlbum = (entry: VirtualEntry) => entry.folder.key === NO_ALBUM;
+    entries =
+      musicView === "songs"
+        ? files
+        : virtual
+            .filter((entry) => entry.folder.kind === kind)
+            // «Sin álbum» last, as «Sin fecha» in Cámara.
+            .sort((a, b) => Number(noAlbum(a)) - Number(noAlbum(b)) || compareEntries(a, b));
   }
   entriesCache = { listing, signature, entries };
   return entries;
@@ -962,7 +988,8 @@ const FILE_ICONS: [RegExp, string][] = [
 
 function entryIcon(entry: Entry): string {
   if (entry.kind === "virtual") {
-    if (entry.folder.kind === "music-folder") return "💿";
+    if (entry.folder.kind === "music-album") return "💿";
+    if (entry.folder.kind === "music-folder") return "📁";
     return entry.folder.kind === "camera" ? "📷" : entry.folder.kind === "year" ? "🗓️" : "🗂️";
   }
   if (entry.kind === "folder") return "📁";
@@ -1035,6 +1062,7 @@ function renderRow(entry: Entry): HTMLTableRowElement {
   name.title = entry.kind === "virtual" ? entry.folder.name : entry.name;
   wrap.append(icon, name);
   const musicFolderRow = entry.kind === "virtual" && entry.folder.kind === "music-folder";
+  const musicAlbumRow = entry.kind === "virtual" && entry.folder.kind === "music-album";
   if (musicFolderRow) {
     // «12 canciones · musica/Queen»: where it is, under its own name.
     const meta = document.createElement("span");
@@ -1042,13 +1070,20 @@ function renderRow(entry: Entry): HTMLTableRowElement {
     const parent = entry.folder.name.split("/").slice(0, -1).join("/");
     meta.textContent = plural(entry.folder.files, "canción", "canciones") + (parent ? ` · ${parent}` : "");
     wrap.appendChild(meta);
+  } else if (musicAlbumRow) {
+    // «12 canciones · Queen»: whose it is.
+    const meta = document.createElement("span");
+    meta.className = "name-meta";
+    const artist = entry.folder.artist;
+    meta.textContent = plural(entry.folder.files, "canción", "canciones") + (artist ? ` · ${artist}` : "");
+    wrap.appendChild(meta);
   } else if (entry.kind === "virtual" || (entry.kind === "folder" && entry.folder.files > 0)) {
     const meta = document.createElement("span");
     meta.className = "name-meta";
     meta.textContent = plural(entry.folder.files, "archivo", "archivos");
     wrap.appendChild(meta);
   }
-  if (entry.kind === "virtual" && !musicFolderRow) {
+  if (entry.kind === "virtual" && !musicFolderRow && !musicAlbumRow) {
     const pill = document.createElement("span");
     pill.className = "pill";
     if (entry.folder.kind.startsWith("label")) {
@@ -1087,6 +1122,14 @@ function renderRow(entry: Entry): HTMLTableRowElement {
     actions.appendChild(
       makeAction("play", `Reproducir ${entry.name}`, () =>
         void playSource({ kind: "music-folder", folder }),
+      ),
+    );
+  }
+  if (musicAlbumRow) {
+    const album = entry.folder.key.slice(MUSIC_ALBUM.length);
+    actions.appendChild(
+      makeAction("play", `Reproducir ${entry.name}`, () =>
+        void playSource({ kind: "music-album", album }),
       ),
     );
   }
@@ -1136,14 +1179,22 @@ function describeListing(entries: Entry[], shown: number): string {
     "labels:places": ["lugar", "lugares"],
     "labels:people": ["persona", "personas"],
   };
-  const [one, many] = nouns[view] ?? ["carpeta", "carpetas"];
+  const albums = view === "media:music" && musicView === "albums";
+  const [one, many] = albums ? ["álbum", "álbumes"] : (nouns[view] ?? ["carpeta", "carpetas"]);
   const parts = [
     folders ? plural(folders, one, many) : "",
     files || !folders ? plural(files, "archivo", "archivos") : "",
   ].filter(Boolean);
   if (state.filter.trim()) {
+    const virtual = listing.virtual_folders ?? [];
+    // Música shows its songs, its albums or its folders: of those.
+    const musicKind = albums ? "music-album" : "music-folder";
     const total =
-      (listing.virtual_folders?.length ?? 0) + listing.folders.length + listing.files.length;
+      view !== "media:music"
+        ? virtual.length + listing.folders.length + listing.files.length
+        : musicView === "songs"
+          ? listing.files.length
+          : virtual.filter((f) => f.kind === musicKind).length;
     parts.push(`de ${total.toLocaleString("es-ES")}`);
   }
   if (shown < entries.length) parts.push(`mostrando ${shown.toLocaleString("es-ES")}`);
@@ -1154,8 +1205,12 @@ function describeListing(entries: Entry[], shown: number): string {
 }
 
 function renderSortHeaders() {
-  // Virtual folders keep their own order (years newest first).
-  const sortable = !!state.listing && (state.listing.folders.length > 0 || state.listing.files.length > 0);
+  // Virtual folders keep their own order (years newest first), and an
+  // album its songs' (by track number).
+  const sortable =
+    !!state.listing &&
+    (state.listing.folders.length > 0 || state.listing.files.length > 0) &&
+    !(currentCrumb().virtual ?? "").startsWith(MUSIC_ALBUM);
   for (const button of document.querySelectorAll<HTMLButtonElement>(".sort")) {
     const active = sortable && button.dataset.sort === state.sort.key;
     button.classList.toggle("asc", active && state.sort.dir === 1);
@@ -1213,6 +1268,9 @@ function emptyTexts(view: string): [string, string] {
     default:
       if (view.startsWith(MUSIC_FOLDER)) {
         return ["No hay canciones en esta carpeta.", "Puede que se hayan movido o borrado."];
+      }
+      if (view.startsWith(MUSIC_ALBUM)) {
+        return ["No hay canciones en este álbum.", "Puede que se hayan borrado o cambiado sus etiquetas."];
       }
       return view.startsWith("label:")
         ? ["No hay fotos aquí.", "O2 puede haberlas quitado de este grupo."]
@@ -1487,8 +1545,10 @@ function bindViewer() {
 
 /** How places are shown: on the map (by default) or as a list; remembered. */
 let placesView: "list" | "map" = loadChoice(PLACES_VIEW_STORAGE, ["list", "map"] as const, "map");
-/** How Música is shown: every song, or its folders; remembered. */
-let musicView: "songs" | "folders" = loadChoice(MUSIC_VIEW_STORAGE, ["songs", "folders"] as const, "songs");
+/** How Música is shown: every song, its albums or its folders; remembered. */
+type MusicView = "songs" | "albums" | "folders";
+const MUSIC_VIEWS = ["songs", "albums", "folders"] as const;
+let musicView: MusicView = loadChoice(MUSIC_VIEW_STORAGE, MUSIC_VIEWS, "songs");
 let map: L.Map | null = null;
 let markers: L.LayerGroup | null = null;
 let fittedPlaces = "";
@@ -1526,7 +1586,7 @@ function renderLabelViews() {
   // they go to O2 Cloud's root, and O2 files them there by their kind.
   $("#upload-btn").classList.toggle(
     "hidden",
-    view.startsWith("label") || view.startsWith(MUSIC_FOLDER),
+    view.startsWith("label") || view.startsWith(MUSIC_FOLDER) || view.startsWith(MUSIC_ALBUM),
   );
   $("#new-folder-btn").classList.toggle(
     "hidden",
@@ -1648,7 +1708,7 @@ function setPlacesView(view: "list" | "map") {
   renderLabelViews();
 }
 
-function setMusicView(view: "songs" | "folders") {
+function setMusicView(view: MusicView) {
   musicView = view;
   saveChoice(MUSIC_VIEW_STORAGE, view);
   state.selected.clear();
@@ -1927,10 +1987,11 @@ let allTracks: Track[] = [];
 let tracks: Track[] = [];
 
 /** Where the player's songs come from: every song, one of Música's
- * folders, or the songs of a folder view (by ID, in its order). */
+ * folders or albums, or the songs of a folder view (by ID, in its order). */
 type TrackSource =
   | { kind: "all" }
   | { kind: "music-folder"; folder: string }
+  | { kind: "music-album"; album: string }
   | { kind: "ids"; ids: number[] };
 let trackSource: TrackSource = { kind: "all" };
 
@@ -1945,15 +2006,29 @@ function tracksFor(source: TrackSource): Track[] {
   if (source.kind === "music-folder") {
     return allTracks.filter((t) => folderOfPath(t.path) === source.folder);
   }
+  if (source.kind === "music-album") {
+    // As the album lists them: by track number, then by name (in lower
+    // case, as the list), those with no number last.
+    const lower = (t: Track) => t.name.toLowerCase();
+    return allTracks
+      .filter((t) => t.album_key === source.album)
+      .sort(
+        (a, b) =>
+          (a.track ?? Infinity) - (b.track ?? Infinity) ||
+          (lower(a) < lower(b) ? -1 : lower(a) > lower(b) ? 1 : 0),
+      );
+  }
   const byId = new Map(allTracks.map((t) => [t.id, t]));
   return source.ids.flatMap((id) => byId.get(id) ?? []);
 }
 
-/** The songs on screen now: all of Música, one of its folders, or those of
- * the folder open. */
+/** The songs on screen now: all of Música, one of its folders or albums,
+ * or those of the folder open. */
 function currentTrackSource(): TrackSource {
   const folder = musicFolder();
   if (folder !== null) return { kind: "music-folder", folder };
+  const view = currentCrumb().virtual ?? "";
+  if (view.startsWith(MUSIC_ALBUM)) return { kind: "music-album", album: view.slice(MUSIC_ALBUM.length) };
   if (inMusic()) return { kind: "all" };
   const ids = visibleEntries().flatMap((entry) =>
     entry.kind === "file" && isAudio(entry.file) && entry.file.normal_id !== null
@@ -1976,7 +2051,7 @@ let trackIndex = -1;
 let retriedTrackId: number | null = null;
 
 function inMusic(): boolean {
-  // All the songs, or one of Música's folders.
+  // All the songs, or one of Música's folders or albums.
   return currentCrumb().virtual?.startsWith("media:music") ?? false;
 }
 
@@ -2057,12 +2132,29 @@ function playTrack(index: number) {
   // The button shows what really happens (playback can be refused).
   void audio.play().catch(() => {}).finally(updatePlayButton);
   $("#player").classList.remove("hidden");
-  $("#player-title").textContent = track.name.replace(/\.[^.]+$/, "");
-  $("#player-title").title = track.path ?? track.name;
+  // «Bohemian Rhapsody · Queen», and its album and file on hover.
+  const line = $("#player-title");
+  line.textContent = trackTitle(track);
+  if (track.artist) {
+    const artist = document.createElement("span");
+    artist.className = "player-artist";
+    artist.textContent = ` · ${track.artist}`;
+    line.appendChild(artist);
+  }
+  line.title = [track.album, track.path ?? track.name].filter(Boolean).join(" · ");
   $("#player-duration").textContent = formatTime(track.duration ?? 0);
   if ("mediaSession" in navigator) {
-    navigator.mediaSession.metadata = new MediaMetadata({ title: track.name, album: "O2 Cloud" });
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: trackTitle(track),
+      artist: track.artist ?? "",
+      album: track.album ?? "O2 Cloud",
+    });
   }
+}
+
+/** A song's title: its tag, or its file's name without the extension. */
+function trackTitle(track: Track): string {
+  return track.title ?? track.name.replace(/\.[^.]+$/, "");
 }
 
 /** Stop and hide the player (closed, or logged out). */
@@ -2133,7 +2225,7 @@ function bindPlayer() {
         if (again >= 0) return playTrack(again);
       }
     }
-    toast(`No se pudo reproducir «${failed?.name ?? "esta canción"}».`, "error");
+    toast(`No se pudo reproducir «${failed ? trackTitle(failed) : "esta canción"}».`, "error");
     // On with the next one, unless it is the only one.
     if (tracks.length > 1) playTrack(trackIndex + 1);
   });
@@ -2165,7 +2257,7 @@ function bindLabelViews() {
   }
   for (const button of document.querySelectorAll<HTMLButtonElement>("#music-toggle button")) {
     button.addEventListener("click", () =>
-      setMusicView(button.dataset.view === "folders" ? "folders" : "songs"),
+      setMusicView(MUSIC_VIEWS.find((view) => view === button.dataset.view) ?? "songs"),
     );
   }
   $("#slide-prev").addEventListener("click", () => showSlide(slideshow.index - 1, true));
@@ -2408,8 +2500,10 @@ function selectionMenu(): MenuEntry[] {
  * go to the root), or null for folders. */
 function groupedView(): "labels" | "media" | null {
   const view = currentCrumb().virtual ?? "";
-  // A folder of Música only shows songs: nothing is uploaded into it.
-  if (view.startsWith("label") || view.startsWith(MUSIC_FOLDER)) return "labels";
+  // A folder or album of Música only shows songs: nothing is uploaded into it.
+  if (view.startsWith("label") || view.startsWith(MUSIC_FOLDER) || view.startsWith(MUSIC_ALBUM)) {
+    return "labels";
+  }
   if (view.startsWith("media:")) return "media";
   return null;
 }

@@ -17,7 +17,7 @@ use crate::photos;
 use crate::transfer::{self, ExistingFiles, UploadOutcome};
 use crate::types::{
     AppSettings, CliInfo, CliRelease, Location, LogicalFile, LogicalListing, LsResponse,
-    MkdirOutput, PartRef, RemoteFile, RemoteFolder, SessionStatus, Slide, StatusOutput,
+    MkdirOutput, PartRef, RemoteFile, RemoteFolder, SessionStatus, Slide, SongTags, StatusOutput,
     StorageSpace, Track, TransferProgress, VirtualFolder,
 };
 
@@ -1221,6 +1221,7 @@ fn year_folders(files: &[LogicalFile]) -> Vec<VirtualFolder> {
         thumbnail: None,
         location: None,
         date: None,
+        artist: None,
     });
     for (year, count, size) in years {
         let key = if year == "Sin fecha" {
@@ -1237,13 +1238,14 @@ fn year_folders(files: &[LogicalFile]) -> Vec<VirtualFolder> {
             thumbnail: None,
             location: None,
             date: None,
+            artist: None,
         });
     }
     folders
 }
 
 /// The account's music or documents (`kind`), wherever they are, as
-/// files of their own.
+/// files of their own. Música also has its albums and its folders.
 async fn media_files(
     app: &AppHandle,
     cli_path: &Path,
@@ -1252,17 +1254,189 @@ async fn media_files(
     if !matches!(kind, "music" | "documents") {
         return Err(format!("Vista desconocida: {kind}"));
     }
-    let args = vec!["media".to_string(), kind.to_string(), "--json".to_string()];
-    let files: Vec<RemoteFile> = cli::run_json(app, cli_path, &args).await?;
-    let shown = shown_media(files);
-    let folders = if kind == "music" {
-        music_folders(&shown)
-    } else {
-        Vec::new()
-    };
-    let mut listing = media_listing(shown);
+    if kind == "documents" {
+        let args = vec!["media".to_string(), kind.to_string(), "--json".to_string()];
+        let files: Vec<RemoteFile> = cli::run_json(app, cli_path, &args).await?;
+        return Ok(media_listing(files));
+    }
+    let songs = shown_songs(cli_songs(app, cli_path).await?);
+    let mut folders = music_albums(&songs);
+    let files: Vec<RemoteFile> = songs.into_iter().map(|song| song.file).collect();
+    folders.extend(music_folders(&files));
+    let mut listing = media_listing(files);
     listing.virtual_folders = folders;
     Ok(listing)
+}
+
+/// A song as `o2cloud media music --json` lists it: the file, and its tags.
+#[derive(serde::Deserialize)]
+struct CliSong {
+    #[serde(flatten)]
+    file: RemoteFile,
+    #[serde(flatten)]
+    tags: SongTags,
+}
+
+async fn cli_songs(app: &AppHandle, cli_path: &Path) -> Result<Vec<CliSong>, String> {
+    let args = vec![
+        "media".to_string(),
+        "music".to_string(),
+        "--json".to_string(),
+    ];
+    cli::run_json(app, cli_path, &args).await
+}
+
+/// The songs to show: not those in hidden folders, as `shown_media`.
+fn shown_songs(songs: Vec<CliSong>) -> Vec<CliSong> {
+    songs
+        .into_iter()
+        .filter(|song| is_shown(&song.file))
+        .collect()
+}
+
+/// Between an album's artist and its name in its key.
+const ALBUM_SEP: char = '\u{1f}';
+/// A compilation's artist in its key.
+const VARIOUS_ARTISTS: &str = "varios artistas";
+
+/// Each song's album, as its key: `<artist>\u{1f}<album>`, in lower case.
+/// An album is its songs with that album tag and artist, in any folder, so
+/// two «Greatest Hits» stay apart. In a folder, an album's songs by several
+/// artists with no track number twice are a compilation, by its album
+/// alone (`varios artistas\u{1f}<album>`); songs with no artist go with the
+/// album's only artist there. Songs with no album are one, «Sin álbum»
+/// (`\u{1f}`). Tags have no control characters, so keys can't mix.
+fn album_keys(songs: &[CliSong]) -> Vec<String> {
+    let fold = |tag: &Option<String>| tag.as_deref().unwrap_or("").to_lowercase();
+    let folder = |song: &CliSong| folder_of(song.file.path.as_deref().unwrap_or("/")).to_string();
+    // Each album name in each folder: its artists, and whether two of them
+    // have the same track number (then they are two albums, not one).
+    #[derive(Default)]
+    struct Shelf {
+        artists: HashSet<String>,
+        tracks: HashMap<u32, String>,
+        two_albums: bool,
+    }
+    let mut shelves: HashMap<(String, String), Shelf> = HashMap::new();
+    for song in songs {
+        let (album, artist) = (fold(&song.tags.album), fold(&song.tags.artist));
+        if album.is_empty() || artist.is_empty() {
+            continue;
+        }
+        let shelf = shelves.entry((album, folder(song))).or_default();
+        if let Some(track) = song.tags.track {
+            let first = shelf.tracks.entry(track).or_insert_with(|| artist.clone());
+            shelf.two_albums |= *first != artist;
+        }
+        shelf.artists.insert(artist);
+    }
+    songs
+        .iter()
+        .map(|song| {
+            let album = fold(&song.tags.album);
+            if album.is_empty() {
+                return ALBUM_SEP.to_string();
+            }
+            let artist = match shelves.get(&(album.clone(), folder(song))) {
+                Some(shelf) if shelf.artists.len() > 1 && !shelf.two_albums => {
+                    VARIOUS_ARTISTS.to_string()
+                }
+                Some(shelf) if shelf.artists.len() == 1 => {
+                    shelf.artists.iter().next().cloned().unwrap_or_default()
+                }
+                _ => fold(&song.tags.artist),
+            };
+            format!("{artist}{ALBUM_SEP}{album}")
+        })
+        .collect()
+}
+
+/// Música by album (see `album_keys`): one entry per album, named as its
+/// first song spells it, with how many songs, their size and its artist.
+/// By name, «Sin álbum» last. Each opens as `media:music-album:<key>`.
+fn music_albums(songs: &[CliSong]) -> Vec<VirtualFolder> {
+    use std::collections::BTreeMap;
+    struct Album<'a> {
+        key: &'a str,
+        name: Option<&'a str>,
+        artist: Option<&'a str>,
+        files: u64,
+        size: u64,
+    }
+    let keys = album_keys(songs);
+    let mut albums: BTreeMap<(bool, &str, &str), Album> = BTreeMap::new();
+    for (song, key) in songs.iter().zip(&keys) {
+        let (artist, album) = key.split_once(ALBUM_SEP).unwrap_or(("", key));
+        let entry = albums
+            .entry((album.is_empty(), album, artist))
+            .or_insert(Album {
+                key,
+                name: None,
+                artist: None,
+                files: 0,
+                size: 0,
+            });
+        entry.files += 1;
+        entry.size += song.file.size.unwrap_or(0);
+        entry.name = entry.name.or(song.tags.album.as_deref());
+        entry.artist = entry.artist.or(song.tags.artist.as_deref());
+    }
+    albums
+        .into_iter()
+        .map(|((no_album, _, artist), album)| VirtualFolder {
+            key: format!("media:music-album:{}", album.key),
+            name: album.name.unwrap_or("Sin álbum").to_string(),
+            files: album.files,
+            size: album.size,
+            kind: "music-album".into(),
+            thumbnail: None,
+            location: None,
+            date: None,
+            artist: if no_album {
+                None
+            } else if artist == VARIOUS_ARTISTS {
+                Some("Varios artistas".into())
+            } else {
+                album.artist.map(String::from)
+            },
+        })
+        .collect()
+}
+
+/// The songs of one of Música's albums (`key`, as `album_keys` makes it).
+async fn music_album_files(
+    app: &AppHandle,
+    cli_path: &Path,
+    key: &str,
+) -> Result<LogicalListing, String> {
+    let songs = shown_songs(cli_songs(app, cli_path).await?);
+    Ok(album_listing(songs, key))
+}
+
+/// `music_album_files`' listing: by track number, then by name; those
+/// without a number last.
+fn album_listing(songs: Vec<CliSong>, key: &str) -> LogicalListing {
+    let keys = album_keys(&songs);
+    let mut tracks = HashMap::new();
+    let in_album: Vec<RemoteFile> = songs
+        .into_iter()
+        .zip(keys)
+        .filter(|(_, song_key)| song_key == key)
+        .map(|(song, _)| {
+            if let Some(track) = song.tags.track {
+                tracks.insert(song.file.id, track);
+            }
+            song.file
+        })
+        .collect();
+    let mut listing = media_listing(in_album);
+    // Already by name: the sort keeps that order for the same number.
+    listing.files.sort_by_key(|file| {
+        file.normal_id
+            .and_then(|id| tracks.get(&id).copied())
+            .unwrap_or(u32::MAX)
+    });
+    listing
 }
 
 /// The songs in one of Música's folders (`folder`, as `/a/b`; `/` for the
@@ -1320,6 +1494,7 @@ fn music_folders(files: &[RemoteFile]) -> Vec<VirtualFolder> {
             thumbnail: None,
             location: None,
             date: None,
+            artist: None,
         })
         .collect()
 }
@@ -1340,24 +1515,25 @@ fn media_listing(files: Vec<RemoteFile>) -> LogicalListing {
 
 /// The media files to show: not those in hidden folders.
 fn shown_media(files: Vec<RemoteFile>) -> Vec<RemoteFile> {
-    files
-        .into_iter()
-        .filter(|f| {
-            !f.name.is_empty()
-                && !f
-                    .path
-                    .as_deref()
-                    .unwrap_or("")
-                    .split('/')
-                    .rev()
-                    .skip(1)
-                    .any(|dir| dir.starts_with('.'))
-        })
-        .collect()
+    files.into_iter().filter(is_shown).collect()
 }
 
-/// The account's music for the player, by name. Hidden folders are left
-/// out, as in the list.
+fn is_shown(file: &RemoteFile) -> bool {
+    !file.name.is_empty() && !in_hidden_folder(file.path.as_deref())
+}
+
+/// True for a file in a hidden folder, by its path (its own name doesn't
+/// count).
+fn in_hidden_folder(path: Option<&str>) -> bool {
+    path.unwrap_or("")
+        .split('/')
+        .rev()
+        .skip(1)
+        .any(|dir| dir.starts_with('.'))
+}
+
+/// The account's music for the player, by name, with their tags and
+/// albums. Hidden folders are left out, as in the list.
 #[tauri::command]
 pub async fn music_tracks(
     app: AppHandle,
@@ -1374,20 +1550,29 @@ pub async fn music_tracks(
 }
 
 fn tracks_of(songs: Vec<serde_json::Value>) -> Vec<Track> {
+    // Each song's album, made from the same songs as in the list.
+    let listed = shown_songs(
+        songs
+            .iter()
+            .filter_map(|song| CliSong::deserialize(song).ok())
+            .collect(),
+    );
+    let albums: HashMap<u64, String> = listed
+        .iter()
+        .map(|song| song.file.id)
+        .zip(album_keys(&listed))
+        .collect();
     songs
         .into_iter()
         .filter_map(|song| {
-            let track: Track = serde_json::from_value(song).ok()?;
-            let hidden = track
-                .path
-                .as_deref()
-                .unwrap_or("")
-                .split('/')
-                .rev()
-                .skip(1)
-                .any(|dir| dir.starts_with('.'));
+            let mut track: Track = serde_json::from_value(song).ok()?;
+            let hidden = in_hidden_folder(track.path.as_deref());
             // Only O2's own HTTPS URLs reach the page.
-            (!hidden && track.url.starts_with("https://cloud.o2online.es/")).then_some(track)
+            if hidden || !track.url.starts_with("https://cloud.o2online.es/") {
+                return None;
+            }
+            track.album_key = albums.get(&track.id).cloned().unwrap_or_default();
+            Some(track)
         })
         .collect()
 }
@@ -1514,6 +1699,7 @@ fn label_listing(kind: &str, labels: Vec<CliLabel>) -> LogicalListing {
                     .thumbnail
                     .filter(|u| u.starts_with("https://cloud.o2online.es/")),
                 location: label.location,
+                artist: None,
             }
         })
         .collect();
@@ -1589,6 +1775,12 @@ pub async fn list_dir(
         .and_then(|v| v.strip_prefix("media:music-folder:"))
     {
         return music_folder_files(&app, &cli_path, folder).await;
+    }
+    if let Some(key) = virtual_path
+        .as_deref()
+        .and_then(|v| v.strip_prefix("media:music-album:"))
+    {
+        return music_album_files(&app, &cli_path, key).await;
     }
     if let Some(kind) = virtual_path
         .as_deref()
@@ -1668,6 +1860,7 @@ pub async fn list_dir(
                         thumbnail: None,
                         location: None,
                         date: None,
+                        artist: None,
                     });
                 }
                 files = other;
@@ -2874,12 +3067,27 @@ mod tests {
             r#"[{"id":1,"name":"a.mp3","path":"/Música/a.mp3","duration":2.24,"url":"https://cloud.o2online.es/sapi/download/audio?k=1","size":9},
                 {"id":2,"name":"b.mp3","path":"/.o2cloud-gui/b.mp3","url":"https://cloud.o2online.es/x"},
                 {"id":3,"name":"c.mp3","path":"/c.mp3","url":"https://evil.example/c.mp3"},
-                {"id":4,"name":"d.mp3","path":"/d.mp3","url":null}]"#,
+                {"id":4,"name":"d.mp3","path":"/d.mp3","url":null},
+                {"id":5,"name":"e.mp3","path":"/Mix/e.mp3","duration":180,"url":"https://cloud.o2online.es/e","title":"E","artist":"A","album":"Mix","track":2,"genre":"Pop"},
+                {"id":6,"name":"f.mp3","path":"/Mix/f.mp3","url":"https://evil.example/f","artist":"B","album":"Mix","track":1}]"#,
         )
         .unwrap();
         let tracks = tracks_of(songs);
-        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks.len(), 2);
         assert_eq!((tracks[0].id, tracks[0].duration), (1, Some(2.24)));
+        // An older CLI's song: no tags, «Sin álbum».
+        assert!(tracks[0].tags.title.is_none());
+        assert_eq!(tracks[0].album_key, "\u{1f}");
+        // Tags come through, and the album is the list's: a compilation,
+        // even though its other song can't be played here.
+        let tagged = &tracks[1];
+        assert_eq!(tagged.tags.title.as_deref(), Some("E"));
+        assert_eq!(tagged.tags.track, Some(2));
+        assert_eq!(tagged.duration, Some(180.0));
+        assert_eq!(tagged.album_key, "varios artistas\u{1f}mix");
+        let json = serde_json::to_value(tagged).unwrap();
+        assert_eq!(json["artist"], "A");
+        assert_eq!(json["album_key"], "varios artistas\u{1f}mix");
     }
 
     #[test]
@@ -3114,6 +3322,104 @@ mod tests {
         assert!(folders.iter().all(|f| f.kind == "music-folder"));
     }
 
+    #[test]
+    fn groups_music_by_album() {
+        let songs: Vec<CliSong> = serde_json::from_str(
+            r#"[
+            {"id":1,"name":"b.mp3","size":10,"path":"/musica/Queen/GH/b.mp3","artist":"Queen","album":"Greatest Hits","track":2},
+            {"id":2,"name":"c.mp3","size":10,"path":"/musica/Queen/GH/c.mp3","artist":"Queen","album":"Greatest hits","track":1},
+            {"id":3,"name":"a.mp3","size":1,"path":"/musica/Queen/GH/a.mp3","album":"Greatest Hits"},
+            {"id":4,"name":"abba.mp3","size":5,"path":"/musica/ABBA/GH/abba.mp3","artist":"ABBA","album":"Greatest Hits","track":1},
+            {"id":5,"name":"x1.mp3","size":1,"path":"/x1.mp3","artist":"Bee Gees","album":"Best","track":1},
+            {"id":6,"name":"x2.mp3","size":1,"path":"/x2.mp3","artist":"Cher","album":"Best","track":1},
+            {"id":7,"name":"n1.mp3","size":3,"path":"/Now 50/CD1/n1.mp3","artist":"A","album":"Now 50","track":1},
+            {"id":8,"name":"n2.mp3","size":3,"path":"/Now 50/CD1/n2.mp3","artist":"B","album":"Now 50","track":2},
+            {"id":9,"name":"n3.mp3","size":3,"path":"/Now 50/CD2/n3.mp3","artist":"C","album":"Now 50","track":1},
+            {"id":10,"name":"n4.mp3","size":3,"path":"/Now 50/CD2/n4.mp3","artist":"A","album":"Now 50","track":2},
+            {"id":11,"name":"u.mp3","size":2,"path":"/u.mp3","title":null,"artist":null,"album":null,"track":null,"genre":null},
+            {"id":12,"name":"v.mp3","size":2,"path":"/v.mp3","artist":"Queen","title":"V"},
+            {"id":13,"name":"h.mp3","size":1,"path":"/.o2cloud-gui/h.mp3","artist":"Queen","album":"Greatest Hits","track":3}
+            ]"#,
+        )
+        .unwrap();
+        let songs = shown_songs(songs);
+        let albums = music_albums(&songs);
+        let summary: Vec<_> = albums
+            .iter()
+            .map(|a| {
+                let artist = a.artist.as_deref().unwrap_or("-");
+                format!("{} · {artist} · {} · {}", a.name, a.files, a.size)
+            })
+            .collect();
+        // Two «Greatest Hits» stay apart, and so do two «Best» in one
+        // folder (both have a track 1); a compilation is one, across its
+        // folders; a song with no artist goes with its album's; songs with
+        // no album are «Sin álbum», last; hidden folders stay out.
+        assert_eq!(
+            summary,
+            [
+                "Best · Bee Gees · 1 · 1",
+                "Best · Cher · 1 · 1",
+                "Greatest Hits · ABBA · 1 · 5",
+                "Greatest Hits · Queen · 3 · 21",
+                "Now 50 · Varios artistas · 4 · 12",
+                "Sin álbum · - · 2 · 4",
+            ]
+        );
+        let keys: Vec<_> = albums
+            .iter()
+            .map(|a| a.key.trim_start_matches("media:music-album:"))
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                "bee gees\u{1f}best",
+                "cher\u{1f}best",
+                "abba\u{1f}greatest hits",
+                "queen\u{1f}greatest hits",
+                "varios artistas\u{1f}now 50",
+                "\u{1f}",
+            ]
+        );
+        assert!(albums.iter().all(|a| a.kind == "music-album"));
+
+        // An album opens by track number, then by name; those with none last.
+        let names: Vec<_> = album_listing(songs, keys[3])
+            .files
+            .into_iter()
+            .map(|f| f.name)
+            .collect();
+        assert_eq!(names, ["c.mp3", "b.mp3", "a.mp3"]);
+    }
+
+    #[test]
+    fn albums_without_tags() {
+        // An older CLI: no tags, so one «Sin álbum» with every song.
+        let songs: Vec<CliSong> = serde_json::from_str(
+            r#"[{"id":1,"name":"a.mp3","size":1,"path":"/a.mp3"},
+                {"id":2,"name":"b.mp3","size":2,"path":"/m/b.mp3"}]"#,
+        )
+        .unwrap();
+        let albums = music_albums(&shown_songs(songs));
+        assert_eq!(albums.len(), 1);
+        assert_eq!((albums[0].name.as_str(), albums[0].files), ("Sin álbum", 2));
+        // Several artists without track numbers in one folder: a compilation.
+        let songs: Vec<CliSong> = serde_json::from_str(
+            r#"[{"id":1,"name":"a.mp3","path":"/a.mp3","artist":"A","album":"Mix"},
+                {"id":2,"name":"b.mp3","path":"/b.mp3","artist":"B","album":"Mix"},
+                {"id":3,"name":"c.mp3","path":"/c.mp3","album":"Mix"}]"#,
+        )
+        .unwrap();
+        assert_eq!(album_keys(&songs), ["varios artistas\u{1f}mix"; 3]);
+        // No artist at all: an album of its own, with none shown.
+        let songs: Vec<CliSong> =
+            serde_json::from_str(r#"[{"id":1,"name":"a.mp3","path":"/a.mp3","album":"Mix"}]"#)
+                .unwrap();
+        let albums = music_albums(&songs);
+        assert_eq!(albums[0].key, "media:music-album:\u{1f}mix");
+        assert_eq!(albums[0].artist, None);
+    }
+
     /// The real CLI's `labels` output through the app's types. Run with
     /// `O2CLOUD_LIVE_CLI=<o2cloud 1.1+> cargo test live_labels -- --ignored`.
     #[test]
@@ -3159,6 +3465,21 @@ mod tests {
                 serde_json::from_str(&run(&["media", kind, "--json"])).unwrap();
             println!("{kind}: {} shown", media_listing(files).files.len());
         }
+        let songs: Vec<CliSong> =
+            serde_json::from_str(&run(&["media", "music", "--json"])).unwrap();
+        let songs = shown_songs(songs);
+        let untagged = songs.iter().filter(|s| s.tags.album.is_none()).count();
+        let albums = music_albums(&songs);
+        println!(
+            "music: {} albums; {} of {} songs with no album",
+            albums.len(),
+            untagged,
+            songs.len()
+        );
+        assert_eq!(
+            albums.iter().map(|a| a.files as usize).sum::<usize>(),
+            songs.len()
+        );
     }
 
     use super::*;

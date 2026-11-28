@@ -69,7 +69,7 @@ pub struct VirtualFolder {
     pub name: String,
     pub files: u64,
     pub size: u64,
-    /// "camera", "year" or "label-<kind>"
+    /// "camera", "year", "label-<kind>", "music-folder" or "music-album"
     pub kind: String,
     /// A label's cover, a signed O2 URL (it opens without the session).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -80,6 +80,9 @@ pub struct VirtualFolder {
     /// A moment's date (ISO).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub date: Option<String>,
+    /// An album's artist, or «Varios artistas».
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artist: Option<String>,
 }
 
 /// A point on the map.
@@ -101,6 +104,28 @@ pub struct Track {
     pub duration: Option<f64>,
     /// A signed O2 URL that streams it.
     pub url: String,
+    #[serde(flatten)]
+    pub tags: SongTags,
+    /// Its album in Música: it opens as `media:music-album:<album_key>`.
+    #[serde(default, skip_deserializing)]
+    pub album_key: String,
+}
+
+/// A song's tags, as `o2cloud media music --json` gives them (from CLI
+/// 1.5.0 on). Each is `None` where the file has none, and with older CLIs.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SongTags {
+    #[serde(default, deserialize_with = "tag_text")]
+    pub title: Option<String>,
+    #[serde(default, deserialize_with = "tag_text")]
+    pub artist: Option<String>,
+    #[serde(default, deserialize_with = "tag_text")]
+    pub album: Option<String>,
+    /// Its number in the album.
+    #[serde(default, deserialize_with = "tag_number")]
+    pub track: Option<u32>,
+    #[serde(default, deserialize_with = "tag_text")]
+    pub genre: Option<String>,
 }
 
 /// One photo of a moment or place's slideshow.
@@ -326,6 +351,31 @@ fn null_as_empty<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<St
     Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
+/// A tag's text, trimmed and without control characters. Empty, `null` or
+/// not text reads as none: one odd tag doesn't fail a list.
+fn tag_text<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    let serde_json::Value::String(text) = serde_json::Value::deserialize(deserializer)? else {
+        return Ok(None);
+    };
+    let text: String = text.chars().filter(|c| !c.is_control()).collect();
+    let text = text.trim();
+    Ok((!text.is_empty()).then(|| text.to_string()))
+}
+
+/// A track number: `7`, or the `7` of `"7/12"`. Zero or anything else reads
+/// as none.
+fn tag_number<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u32>, D::Error> {
+    let number = match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::Number(n) => n.as_u64().and_then(|n| u32::try_from(n).ok()),
+        serde_json::Value::String(s) => {
+            let digits: String = s.trim().chars().take_while(char::is_ascii_digit).collect();
+            digits.parse().ok()
+        }
+        _ => None,
+    };
+    Ok(number.filter(|n| *n > 0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,5 +386,28 @@ mod tests {
             serde_json::from_str(r#"[{"id":1,"name":null},{"id":2},{"id":3,"name":"a"}]"#).unwrap();
         let names: Vec<_> = files.iter().map(|f| f.name.as_str()).collect();
         assert_eq!(names, vec!["", "", "a"]);
+    }
+
+    #[test]
+    fn song_tags_read_leniently() {
+        let tags: Vec<SongTags> = serde_json::from_str(
+            r#"[{"title":"  Bohemian Rhapsody ","artist":"Queen","album":"A Night at the Opera","track":11,"genre":"Rock"},
+                {"title":null,"artist":"","album":"a\u001fb","track":"7/12","genre":3},
+                {"track":0},
+                {}]"#,
+        )
+        .unwrap();
+        assert_eq!(tags[0].title.as_deref(), Some("Bohemian Rhapsody"));
+        assert_eq!(tags[0].track, Some(11));
+        assert_eq!(tags[0].genre.as_deref(), Some("Rock"));
+        // Empty and odd values are none; control characters go.
+        assert_eq!(tags[1].title, None);
+        assert_eq!(tags[1].artist, None);
+        assert_eq!(tags[1].album.as_deref(), Some("ab"));
+        assert_eq!(tags[1].track, Some(7));
+        assert_eq!(tags[1].genre, None);
+        assert_eq!(tags[2].track, None);
+        // An older CLI: no tags at all.
+        assert!(tags[3].title.is_none() && tags[3].album.is_none() && tags[3].track.is_none());
     }
 }
