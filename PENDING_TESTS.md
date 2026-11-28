@@ -558,6 +558,12 @@ los tres como `source: "file"`. En la repetición,
       `com.apple.security.personal-information.photos-library`, requisito
       `identifier "es.dabi.o2cloud" and certificate leaf = H"c3dcfb53…"`, y
       `codesign --verify --deep --strict` correcto. Llavero y build borrados.
+- [x] Release **v0.2.7** publicada el 28 nov 2026: jobs en verde (macOS
+      firmado con «O2 Cloud self-signed (dcarnicer)»), checksums OK,
+      `latest.json` con la 0.2.7, 5 firmas de actualización válidas. El
+      `.app` del `.dmg` y el del paquete del actualizador llevan
+      `flags=runtime`, el entitlement de fototeca y el requisito con el
+      certificado; `codesign --verify --deep --strict` correcto.
 - [ ] 0.2.7 instalada (por OTA desde la 0.2.6): conceder Fotos una vez; ver
       la biblioteca y subir un vídeo pequeño desde Fotos.
 - [ ] Con la 0.2.8 o una build posterior: el permiso de Fotos sigue concedido.
